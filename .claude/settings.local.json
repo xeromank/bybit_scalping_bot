@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:bybit-exchange.github.io)",
+      "Bash(flutter pub get:*)",
+      "Bash(tree:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(test:*)",
+      "Bash(cat:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
