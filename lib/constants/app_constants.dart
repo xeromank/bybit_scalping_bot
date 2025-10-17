@@ -13,8 +13,8 @@ class AppConstants {
   // Default Trading Settings
   static const String defaultSymbol = 'ETHUSDT';
   static const double defaultOrderAmount = 50.0;
-  static const double defaultProfitTargetPercent = 0.5;
-  static const double defaultStopLossPercent = 0.3;
+  static const double defaultProfitTargetPercent = 1.5;
+  static const double defaultStopLossPercent = 0.8;
   static const String defaultLeverage = '5';
 
   // Trading Limits

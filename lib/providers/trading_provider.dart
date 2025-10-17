@@ -164,12 +164,12 @@ class TradingProvider extends ChangeNotifier {
       // 0.3% price move × 3x = 0.9% ROE
       // Fee impact: 0.33% → Net: 0.57%
       _profitTargetPercent = 0.9;
-      _stopLossPercent = 0.45;
+      _stopLossPercent = 0.5;
     } else if (leverage <= 5) {
       // 0.3% price move × 5x = 1.5% ROE
       // Fee impact: 0.55% → Net: 0.95%
       _profitTargetPercent = 1.5;
-      _stopLossPercent = 0.75;
+      _stopLossPercent = 0.8;
     } else if (leverage <= 10) {
       // 0.3% price move × 10x = 3% ROE
       // Fee impact: 1.1% → Net: 1.9%

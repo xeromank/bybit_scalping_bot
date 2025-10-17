@@ -147,6 +147,11 @@ class _TradingControlsState extends State<TradingControls> {
                         DropdownMenuItem(value: '5', child: Text('5x')),
                         DropdownMenuItem(value: '10', child: Text('10x')),
                         DropdownMenuItem(value: '15', child: Text('15x')),
+                        DropdownMenuItem(value: '20', child: Text('20x')),
+                        DropdownMenuItem(value: '30', child: Text('30x')),
+                        DropdownMenuItem(value: '50', child: Text('50x')),
+                        DropdownMenuItem(value: '75', child: Text('75x')),
+                        DropdownMenuItem(value: '100', child: Text('100x')),
                       ],
                       onChanged: isRunning
                           ? null
