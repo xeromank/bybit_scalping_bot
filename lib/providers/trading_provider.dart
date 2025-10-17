@@ -31,6 +31,12 @@ class TradingProvider extends ChangeNotifier {
   double _stopLossPercent = AppConstants.defaultStopLossPercent;
   String _leverage = AppConstants.defaultLeverage;
 
+  // RSI Thresholds (configurable by user)
+  double _rsi6LongThreshold = AppConstants.defaultRsi6LongThreshold;
+  double _rsi6ShortThreshold = AppConstants.defaultRsi6ShortThreshold;
+  double _rsi12LongThreshold = AppConstants.defaultRsi12LongThreshold;
+  double _rsi12ShortThreshold = AppConstants.defaultRsi12ShortThreshold;
+
   // State
   bool _isRunning = false;
   Position? _currentPosition;
@@ -68,6 +74,12 @@ class TradingProvider extends ChangeNotifier {
   List<TradeLog> get logs => List.unmodifiable(_logs);
   double? get currentPrice => _currentPrice;
   TechnicalAnalysis? get technicalAnalysis => _technicalAnalysis;
+
+  // RSI Threshold Getters
+  double get rsi6LongThreshold => _rsi6LongThreshold;
+  double get rsi6ShortThreshold => _rsi6ShortThreshold;
+  double get rsi12LongThreshold => _rsi12LongThreshold;
+  double get rsi12ShortThreshold => _rsi12ShortThreshold;
 
   // Setters with validation
   Future<void> setSymbol(String value) async {
@@ -137,6 +149,43 @@ class TradingProvider extends ChangeNotifier {
 
         notifyListeners();
       }
+    }
+  }
+
+  // RSI Threshold Setters
+  void setRsi6LongThreshold(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _rsi6LongThreshold = value;
+      notifyListeners();
+    }
+  }
+
+  void setRsi6ShortThreshold(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _rsi6ShortThreshold = value;
+      notifyListeners();
+    }
+  }
+
+  void setRsi12LongThreshold(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _rsi12LongThreshold = value;
+      notifyListeners();
+    }
+  }
+
+  void setRsi12ShortThreshold(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _rsi12ShortThreshold = value;
+      notifyListeners();
     }
   }
 
@@ -465,8 +514,15 @@ class TradingProvider extends ChangeNotifier {
       volumes = parseVolumes(klineResponse);
       print('TradingProvider: Using ${closePrices.length} kline candles with volume data');
 
-      // Analyze technical indicators
-      final analysis = analyzePriceData(closePrices, volumes);
+      // Analyze technical indicators with custom RSI thresholds
+      final analysis = analyzePriceData(
+        closePrices,
+        volumes,
+        rsi6LongThreshold: _rsi6LongThreshold,
+        rsi6ShortThreshold: _rsi6ShortThreshold,
+        rsi12LongThreshold: _rsi12LongThreshold,
+        rsi12ShortThreshold: _rsi12ShortThreshold,
+      );
 
       // Store technical analysis for UI display
       _technicalAnalysis = analysis;

@@ -17,6 +17,12 @@ class AppConstants {
   static const double defaultStopLossPercent = 0.8;
   static const String defaultLeverage = '5';
 
+  // Default RSI Settings (Conservative for volatile markets)
+  static const double defaultRsi6LongThreshold = 25.0;
+  static const double defaultRsi6ShortThreshold = 75.0;
+  static const double defaultRsi12LongThreshold = 40.0;
+  static const double defaultRsi12ShortThreshold = 60.0;
+
   // Trading Limits
   static const double minOrderAmount = 40.0; // Minimum to ensure 0.01 qty for most symbols
   static const double maxOrderAmount = 10000.0;
@@ -26,6 +32,10 @@ class AppConstants {
   static const double maxStopLossPercent = 5.0;
   static const int minLeverage = 1;
   static const int maxLeverage = 100;
+
+  // RSI Limits
+  static const double minRsiThreshold = 10.0;
+  static const double maxRsiThreshold = 90.0;
 
   // Bot Settings
   static const Duration botMonitoringInterval = Duration(seconds: 3);

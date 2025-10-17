@@ -133,6 +133,12 @@ class TechnicalAnalysis {
   final double currentPrice;
   final double currentVolume;
 
+  // RSI Thresholds (customizable)
+  final double rsi6LongThreshold;
+  final double rsi6ShortThreshold;
+  final double rsi12LongThreshold;
+  final double rsi12ShortThreshold;
+
   TechnicalAnalysis({
     required this.rsi6,
     required this.rsi12,
@@ -142,37 +148,41 @@ class TechnicalAnalysis {
     required this.ema21,
     required this.currentPrice,
     required this.currentVolume,
+    required this.rsi6LongThreshold,
+    required this.rsi6ShortThreshold,
+    required this.rsi12LongThreshold,
+    required this.rsi12ShortThreshold,
   });
 
   /// Checks if long entry conditions are met
   /// Conservative approach: stricter RSI thresholds and trend confirmation
   bool get isLongSignal {
-    // Conservative RSI conditions:
-    // RSI(6) < 25 (very oversold)
-    // AND RSI(12) < 40 (mid-term confirmation)
+    // Conservative RSI conditions (using custom thresholds):
+    // RSI(6) < rsi6LongThreshold (default: 25 - very oversold)
+    // AND RSI(12) < rsi12LongThreshold (default: 40 - mid-term confirmation)
     // AND price > EMA(21) (uptrend confirmation)
-    return rsi6 < 25 &&
-        rsi12 < 40 &&
+    return rsi6 < rsi6LongThreshold &&
+        rsi12 < rsi12LongThreshold &&
         currentPrice > ema21;
   }
 
   /// Checks if short entry conditions are met
   /// Conservative approach: stricter RSI thresholds and trend confirmation
   bool get isShortSignal {
-    // Conservative RSI conditions:
-    // RSI(6) > 75 (very overbought)
-    // AND RSI(12) > 60 (mid-term confirmation)
+    // Conservative RSI conditions (using custom thresholds):
+    // RSI(6) > rsi6ShortThreshold (default: 75 - very overbought)
+    // AND RSI(12) > rsi12ShortThreshold (default: 60 - mid-term confirmation)
     // AND price < EMA(21) (downtrend confirmation)
-    return rsi6 > 75 &&
-        rsi12 > 60 &&
+    return rsi6 > rsi6ShortThreshold &&
+        rsi12 > rsi12ShortThreshold &&
         currentPrice < ema21;
   }
 
   /// Checks if conditions are partially met for long (one RSI condition satisfied)
   bool get isLongPreparing {
     if (isLongSignal) return false; // Already a full signal
-    final rsi6Ok = rsi6 < 25;
-    final rsi12Ok = rsi12 < 40;
+    final rsi6Ok = rsi6 < rsi6LongThreshold;
+    final rsi12Ok = rsi12 < rsi12LongThreshold;
     final trendOk = currentPrice > ema21;
 
     // At least one RSI condition + trend condition
@@ -182,8 +192,8 @@ class TechnicalAnalysis {
   /// Checks if conditions are partially met for short (one RSI condition satisfied)
   bool get isShortPreparing {
     if (isShortSignal) return false; // Already a full signal
-    final rsi6Ok = rsi6 > 75;
-    final rsi12Ok = rsi12 > 60;
+    final rsi6Ok = rsi6 > rsi6ShortThreshold;
+    final rsi12Ok = rsi12 > rsi12ShortThreshold;
     final trendOk = currentPrice < ema21;
 
     // At least one RSI condition + trend condition
@@ -217,8 +227,12 @@ class TechnicalAnalysis {
 /// Analyzes price and volume data and returns technical indicators
 TechnicalAnalysis analyzePriceData(
   List<double> closePrices,
-  List<double> volumes,
-) {
+  List<double> volumes, {
+  required double rsi6LongThreshold,
+  required double rsi6ShortThreshold,
+  required double rsi12LongThreshold,
+  required double rsi12ShortThreshold,
+}) {
   if (closePrices.length < 30) {
     throw ArgumentError('Need at least 30 price points for analysis');
   }
@@ -244,5 +258,9 @@ TechnicalAnalysis analyzePriceData(
     ema21: ema21,
     currentPrice: currentPrice,
     currentVolume: currentVolume,
+    rsi6LongThreshold: rsi6LongThreshold,
+    rsi6ShortThreshold: rsi6ShortThreshold,
+    rsi12LongThreshold: rsi12LongThreshold,
+    rsi12ShortThreshold: rsi12ShortThreshold,
   );
 }

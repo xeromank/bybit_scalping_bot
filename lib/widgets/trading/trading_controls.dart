@@ -23,6 +23,10 @@ class _TradingControlsState extends State<TradingControls> {
   late TextEditingController _amountController;
   late TextEditingController _profitController;
   late TextEditingController _stopLossController;
+  late TextEditingController _rsi6LongController;
+  late TextEditingController _rsi6ShortController;
+  late TextEditingController _rsi12LongController;
+  late TextEditingController _rsi12ShortController;
 
   @override
   void initState() {
@@ -35,6 +39,14 @@ class _TradingControlsState extends State<TradingControls> {
         TextEditingController(text: provider.profitTargetPercent.toString());
     _stopLossController =
         TextEditingController(text: provider.stopLossPercent.toString());
+    _rsi6LongController =
+        TextEditingController(text: provider.rsi6LongThreshold.toString());
+    _rsi6ShortController =
+        TextEditingController(text: provider.rsi6ShortThreshold.toString());
+    _rsi12LongController =
+        TextEditingController(text: provider.rsi12LongThreshold.toString());
+    _rsi12ShortController =
+        TextEditingController(text: provider.rsi12ShortThreshold.toString());
   }
 
   @override
@@ -43,6 +55,10 @@ class _TradingControlsState extends State<TradingControls> {
     _amountController.dispose();
     _profitController.dispose();
     _stopLossController.dispose();
+    _rsi6LongController.dispose();
+    _rsi6ShortController.dispose();
+    _rsi12LongController.dispose();
+    _rsi12ShortController.dispose();
     super.dispose();
   }
 
@@ -206,6 +222,102 @@ class _TradingControlsState extends State<TradingControls> {
                         final stopLoss = double.tryParse(value);
                         if (stopLoss != null) {
                           provider.setStopLossPercent(stopLoss);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ThemeConstants.spacingSmall),
+
+              // Row 4: RSI(6) Thresholds
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _rsi6LongController,
+                      decoration: ThemeConstants.inputDecoration(
+                        labelText: 'RSI(6) 롱',
+                        prefixIcon: Icons.arrow_upward,
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                      ],
+                      enabled: !isRunning,
+                      onChanged: (value) {
+                        final threshold = double.tryParse(value);
+                        if (threshold != null) {
+                          provider.setRsi6LongThreshold(threshold);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: ThemeConstants.spacingSmall),
+                  Expanded(
+                    child: TextField(
+                      controller: _rsi6ShortController,
+                      decoration: ThemeConstants.inputDecoration(
+                        labelText: 'RSI(6) 숏',
+                        prefixIcon: Icons.arrow_downward,
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                      ],
+                      enabled: !isRunning,
+                      onChanged: (value) {
+                        final threshold = double.tryParse(value);
+                        if (threshold != null) {
+                          provider.setRsi6ShortThreshold(threshold);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ThemeConstants.spacingSmall),
+
+              // Row 5: RSI(12) Thresholds
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _rsi12LongController,
+                      decoration: ThemeConstants.inputDecoration(
+                        labelText: 'RSI(12) 롱',
+                        prefixIcon: Icons.arrow_upward,
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                      ],
+                      enabled: !isRunning,
+                      onChanged: (value) {
+                        final threshold = double.tryParse(value);
+                        if (threshold != null) {
+                          provider.setRsi12LongThreshold(threshold);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: ThemeConstants.spacingSmall),
+                  Expanded(
+                    child: TextField(
+                      controller: _rsi12ShortController,
+                      decoration: ThemeConstants.inputDecoration(
+                        labelText: 'RSI(12) 숏',
+                        prefixIcon: Icons.arrow_downward,
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                      ],
+                      enabled: !isRunning,
+                      onChanged: (value) {
+                        final threshold = double.tryParse(value);
+                        if (threshold != null) {
+                          provider.setRsi12ShortThreshold(threshold);
                         }
                       },
                     ),
