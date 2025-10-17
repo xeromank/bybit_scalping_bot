@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/services/bybit_api_client.dart';
+import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
+import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/secure_storage_service.dart';
 import 'package:bybit_scalping_bot/repositories/bybit_repository.dart';
 import 'package:bybit_scalping_bot/repositories/credential_repository.dart';
@@ -67,7 +69,38 @@ class MyApp extends StatelessWidget {
                 apiSecret: authProvider.credentials!.apiSecret,
               );
               final repository = BybitRepository(apiClient: apiClient);
-              return BalanceProvider(repository: repository);
+
+              // Create WebSocket client for real-time position updates
+              final wsClient = BybitWebSocketClient(
+                apiKey: authProvider.credentials!.apiKey,
+                apiSecret: authProvider.credentials!.apiSecret,
+                isTestnet: false,
+              );
+
+              // Create public WebSocket client for real-time ticker/kline data
+              final publicWsClient = BybitPublicWebSocketClient(
+                isTestnet: false,
+              );
+
+              final provider = BalanceProvider(
+                repository: repository,
+                wsClient: wsClient,
+                publicWsClient: publicWsClient,
+              );
+
+              // Connect both WebSocket clients asynchronously
+              Future.wait([
+                wsClient.connect(),
+                publicWsClient.connect(),
+              ]).then((_) {
+                // WebSocket connected, fetch balance again to subscribe to positions
+                provider.fetchBalance();
+              }).catchError((error) {
+                // Handle connection error silently - will fallback to API
+                print('WebSocket connection failed: $error');
+              });
+
+              return provider;
             }
             return null;
           },
@@ -84,7 +117,26 @@ class MyApp extends StatelessWidget {
                 apiSecret: authProvider.credentials!.apiSecret,
               );
               final repository = BybitRepository(apiClient: apiClient);
-              return TradingProvider(repository: repository);
+
+              // Create public WebSocket client for real-time kline data
+              final publicWsClient = BybitPublicWebSocketClient(
+                isTestnet: false,
+              );
+
+              final tradingProvider = TradingProvider(
+                repository: repository,
+                publicWsClient: publicWsClient,
+              );
+
+              // Connect public WebSocket and initialize
+              publicWsClient.connect().then((_) {
+                // WebSocket connected, subscribe to default symbol
+                tradingProvider.initialize();
+              }).catchError((error) {
+                print('Public WebSocket connection failed for TradingProvider: $error');
+              });
+
+              return tradingProvider;
             }
             return null;
           },

@@ -11,7 +11,9 @@ import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 /// This widget observes the TradingProvider and displays log entries
 /// with appropriate styling based on log level.
 class LogList extends StatelessWidget {
-  const LogList({super.key});
+  final ScrollController? scrollController;
+
+  const LogList({super.key, this.scrollController});
 
   @override
   Widget build(BuildContext context) {
@@ -29,6 +31,7 @@ class LogList extends StatelessWidget {
         }
 
         return ListView.builder(
+          controller: scrollController,
           itemCount: logs.length,
           itemBuilder: (context, index) {
             final log = logs[index];

@@ -11,14 +11,14 @@ class AppConstants {
   static const String appVersion = '1.0.0';
 
   // Default Trading Settings
-  static const String defaultSymbol = 'BTCUSDT';
-  static const double defaultOrderAmount = 10.0;
+  static const String defaultSymbol = 'ETHUSDT';
+  static const double defaultOrderAmount = 50.0;
   static const double defaultProfitTargetPercent = 0.5;
   static const double defaultStopLossPercent = 0.3;
   static const String defaultLeverage = '5';
 
   // Trading Limits
-  static const double minOrderAmount = 0.001;
+  static const double minOrderAmount = 40.0; // Minimum to ensure 0.01 qty for most symbols
   static const double maxOrderAmount = 10000.0;
   static const double minProfitTargetPercent = 0.1;
   static const double maxProfitTargetPercent = 10.0;

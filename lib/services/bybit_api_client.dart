@@ -26,7 +26,7 @@ class BybitApiClient implements ApiClient {
   BybitApiClient({
     required this.apiKey,
     required this.apiSecret,
-    this.baseUrl = 'https://api-testnet.bybit.com',
+    this.baseUrl = 'https://api.bybit.com',
     this.recvWindow = 5000,
   });
 
@@ -223,22 +223,34 @@ class BybitApiClient implements ApiClient {
     required String symbol,
     required String side, // Buy or Sell
     required String orderType, // Market or Limit
-    required String qty,
+    String? qty,
+    String? orderValue,
     String? price,
     String? timeInForce = 'GTC',
     int positionIdx = 0,
     bool reduceOnly = false,
     String? orderLinkId,
+    String? takeProfit, // TP price
+    String? stopLoss, // SL price
+    String? tpTriggerBy, // TP trigger price type (default: LastPrice)
+    String? slTriggerBy, // SL trigger price type (default: LastPrice)
   }) async {
     final body = <String, dynamic>{
       'category': 'linear',
       'symbol': symbol,
       'side': side,
       'orderType': orderType,
-      'qty': qty,
       'positionIdx': positionIdx,
       'reduceOnly': reduceOnly,
     };
+
+    if (qty != null) {
+      body['qty'] = qty;
+    }
+
+    if (orderValue != null) {
+      body['orderValue'] = orderValue;
+    }
 
     if (price != null) {
       body['price'] = price;
@@ -252,6 +264,16 @@ class BybitApiClient implements ApiClient {
       body['orderLinkId'] = orderLinkId;
     }
 
+    if (takeProfit != null) {
+      body['takeProfit'] = takeProfit;
+      body['tpTriggerBy'] = tpTriggerBy ?? 'LastPrice';
+    }
+
+    if (stopLoss != null) {
+      body['stopLoss'] = stopLoss;
+      body['slTriggerBy'] = slTriggerBy ?? 'LastPrice';
+    }
+
     return await post('/v5/order/create', body: body);
   }
 
@@ -261,6 +283,7 @@ class BybitApiClient implements ApiClient {
   }) async {
     final params = <String, dynamic>{
       'category': 'linear',
+      'settleCoin': 'USDT',
     };
 
     if (symbol != null) {
@@ -320,5 +343,37 @@ class BybitApiClient implements ApiClient {
       'category': 'linear',
       'symbol': symbol,
     });
+  }
+
+  // K-line (캔들스틱) 데이터 조회
+  Future<Map<String, dynamic>> getKlines({
+    required String symbol,
+    required String interval, // 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
+    int limit = 200, // 최대 1000
+  }) async {
+    return await get('/v5/market/kline', params: {
+      'category': 'linear',
+      'symbol': symbol,
+      'interval': interval,
+      'limit': limit.toString(),
+    });
+  }
+
+  // 거래 상품 정보 조회
+  Future<Map<String, dynamic>> getInstrumentsInfo({
+    required String category, // linear, inverse, spot, option
+    String? symbol,
+    int limit = 500,
+  }) async {
+    final params = <String, dynamic>{
+      'category': category,
+      'limit': limit.toString(),
+    };
+
+    if (symbol != null) {
+      params['symbol'] = symbol;
+    }
+
+    return await get('/v5/market/instruments-info', params: params);
   }
 }

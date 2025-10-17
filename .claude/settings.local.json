@@ -6,7 +6,15 @@
       "Bash(tree:*)",
       "Bash(flutter analyze:*)",
       "Bash(test:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(flutter doctor:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter emulators:*)",
+      "Bash(open:*)",
+      "Bash(flutter run:*)",
+      "Bash(nc:*)",
+      "Bash(flutter clean:*)",
+      "Bash(pkill:*)"
     ],
     "deny": [],
     "ask": []

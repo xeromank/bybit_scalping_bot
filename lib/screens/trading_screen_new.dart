@@ -24,6 +24,8 @@ class TradingScreenNew extends StatefulWidget {
 }
 
 class _TradingScreenNewState extends State<TradingScreenNew> {
+  final ScrollController _logScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -31,6 +33,20 @@ class _TradingScreenNewState extends State<TradingScreenNew> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<BalanceProvider>().fetchBalance();
     });
+  }
+
+  @override
+  void dispose() {
+    _logScrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToTop() {
+    _logScrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
   }
 
   Future<void> _logout() async {
@@ -109,35 +125,46 @@ class _TradingScreenNewState extends State<TradingScreenNew> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Balance Card
-          const BalanceCard(),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Balance Card
+            const BalanceCard(),
 
-          // Trading Controls
-          const TradingControls(),
+            // Trading Controls
+            const TradingControls(),
 
-          // Log Section Header
-          const Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: ThemeConstants.spacingMedium,
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '거래 로그',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
+            // Log Section Header
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: ThemeConstants.spacingMedium,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '거래 로그',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_upward),
+                    iconSize: 20,
+                    tooltip: '최상단으로',
+                    onPressed: _scrollToTop,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(height: ThemeConstants.spacingSmall),
+            const SizedBox(height: ThemeConstants.spacingSmall),
 
-          // Log List
-          Expanded(
-            child: Container(
+            // Log List with fixed height for scrolling
+            Container(
+              height: 300,
               margin: const EdgeInsets.symmetric(
                 horizontal: ThemeConstants.spacingMedium,
               ),
@@ -149,11 +176,11 @@ class _TradingScreenNewState extends State<TradingScreenNew> {
                   ThemeConstants.borderRadiusMedium,
                 ),
               ),
-              child: const LogList(),
+              child: LogList(scrollController: _logScrollController),
             ),
-          ),
-          const SizedBox(height: ThemeConstants.spacingMedium),
-        ],
+            const SizedBox(height: ThemeConstants.spacingMedium),
+          ],
+        ),
       ),
     );
   }

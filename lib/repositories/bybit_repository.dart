@@ -24,6 +24,9 @@ class BybitRepository {
   BybitRepository({required BybitApiClient apiClient})
       : _apiClient = apiClient;
 
+  /// Exposes API client for advanced operations (e.g., K-line data)
+  BybitApiClient get apiClient => _apiClient;
+
   /// Fetches wallet balance for the account
   ///
   /// Returns [Result<WalletBalance>] - Success with balance or Failure with error
@@ -38,7 +41,8 @@ class BybitRepository {
       );
 
       if (response['retCode'] == 0) {
-        final balance = WalletBalance.fromJson(response['result']);
+        final result = response['result'];
+        final balance = WalletBalance.fromJson(result);
         return Success(balance);
       } else {
         return Failure(
@@ -156,11 +160,16 @@ class BybitRepository {
         side: request.side,
         orderType: request.orderType,
         qty: request.qty,
+        orderValue: request.orderValue,
         price: request.price,
         timeInForce: request.timeInForce,
         positionIdx: request.positionIdx,
         reduceOnly: request.reduceOnly,
         orderLinkId: request.orderLinkId,
+        takeProfit: request.takeProfit,
+        stopLoss: request.stopLoss,
+        tpTriggerBy: request.tpTriggerBy,
+        slTriggerBy: request.slTriggerBy,
       );
 
       if (response['retCode'] == 0) {
@@ -178,7 +187,7 @@ class BybitRepository {
           side: request.side,
           orderType: request.orderType,
           price: request.price ?? '0',
-          qty: request.qty,
+          qty: request.qty ?? request.orderValue ?? '0',
           orderStatus: 'New',
           timeInForce: request.timeInForce ?? 'GTC',
           reduceOnly: request.reduceOnly,

@@ -202,24 +202,34 @@ class OrderRequest {
   final String symbol;
   final String side;
   final String orderType;
-  final String qty;
+  final String? qty; // Quantity in coins (e.g., 0.1 BTC) - use for reduce-only or when qty is known
+  final String? orderValue; // Order value in USDT (e.g., 100 USDT) - use for market buy/sell
   final String? price;
   final String? timeInForce;
   final int positionIdx;
   final bool reduceOnly;
   final String? orderLinkId;
+  final String? takeProfit; // TP price
+  final String? stopLoss; // SL price
+  final String? tpTriggerBy; // TP trigger price type (default: LastPrice)
+  final String? slTriggerBy; // SL trigger price type (default: LastPrice)
 
   const OrderRequest({
     required this.symbol,
     required this.side,
     required this.orderType,
-    required this.qty,
+    this.qty,
+    this.orderValue,
     this.price,
     this.timeInForce = 'GTC',
     this.positionIdx = 0,
     this.reduceOnly = false,
     this.orderLinkId,
-  });
+    this.takeProfit,
+    this.stopLoss,
+    this.tpTriggerBy,
+    this.slTriggerBy,
+  }) : assert(qty != null || orderValue != null, 'Either qty or orderValue must be provided');
 
   /// Converts OrderRequest to JSON
   Map<String, dynamic> toJson() {
@@ -228,16 +238,21 @@ class OrderRequest {
       'symbol': symbol,
       'side': side,
       'orderType': orderType,
-      'qty': qty,
+      if (qty != null) 'qty': qty,
+      if (orderValue != null) 'orderValue': orderValue,
       if (price != null) 'price': price,
       if (timeInForce != null) 'timeInForce': timeInForce,
       'positionIdx': positionIdx,
       'reduceOnly': reduceOnly,
       if (orderLinkId != null) 'orderLinkId': orderLinkId,
+      if (takeProfit != null) 'takeProfit': takeProfit,
+      if (stopLoss != null) 'stopLoss': stopLoss,
+      if (tpTriggerBy != null) 'tpTriggerBy': tpTriggerBy,
+      if (slTriggerBy != null) 'slTriggerBy': slTriggerBy,
     };
   }
 
   @override
   String toString() =>
-      'OrderRequest(symbol: $symbol, side: $side, type: $orderType, qty: $qty)';
+      'OrderRequest(symbol: $symbol, side: $side, type: $orderType, ${qty != null ? "qty: $qty" : "orderValue: $orderValue"})';
 }

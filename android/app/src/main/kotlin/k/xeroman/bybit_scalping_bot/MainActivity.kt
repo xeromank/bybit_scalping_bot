@@ -1,4 +1,4 @@
-package com.example.bybit_scalping_bot
+package k.xeroman.bybit_scalping_bot
 
 import io.flutter.embedding.android.FlutterActivity
 

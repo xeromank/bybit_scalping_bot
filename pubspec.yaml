@@ -39,6 +39,9 @@ dependencies:
   # HTTP requests
   http: ^1.1.0
 
+  # WebSocket for real-time data
+  web_socket_channel: ^2.4.0
+
   # Cryptography for API signature
   crypto: ^3.0.3
 
@@ -48,6 +51,12 @@ dependencies:
 
   # State management
   provider: ^6.1.1
+
+  # Keep screen awake
+  wakelock_plus: ^1.2.0
+
+  # Background execution
+  flutter_foreground_task: ^8.0.0
 
 dev_dependencies:
   flutter_test:

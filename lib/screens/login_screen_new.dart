@@ -28,7 +28,10 @@ class _LoginScreenNewState extends State<LoginScreenNew> {
   @override
   void initState() {
     super.initState();
-    _loadSavedCredentials();
+    // Build가 완료된 후에 실행
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSavedCredentials();
+    });
   }
 
   @override

@@ -15,6 +15,7 @@ class Position {
   final String cumRealisedPnl;
   final String leverage;
   final int positionIdx;
+  final String positionIM; // Position Initial Margin (증거금)
   final String? takeProfit;
   final String? stopLoss;
   final String? trailingStop;
@@ -33,6 +34,7 @@ class Position {
     required this.cumRealisedPnl,
     required this.leverage,
     required this.positionIdx,
+    required this.positionIM,
     this.takeProfit,
     this.stopLoss,
     this.trailingStop,
@@ -42,26 +44,40 @@ class Position {
 
   /// Creates Position from API response
   factory Position.fromJson(Map<String, dynamic> json) {
+    // Handle both API (avgPrice) and WebSocket (entryPrice) formats
+    final avgPrice = (json['avgPrice'] ?? json['entryPrice'])?.toString() ?? '0';
+
+    // Handle takeProfit, stopLoss, trailingStop which can be "0", "", or null
+    String? takeProfit = json['takeProfit']?.toString();
+    if (takeProfit == '0' || takeProfit == '' || takeProfit == null) takeProfit = null;
+
+    String? stopLoss = json['stopLoss']?.toString();
+    if (stopLoss == '0' || stopLoss == '' || stopLoss == null) stopLoss = null;
+
+    String? trailingStop = json['trailingStop']?.toString();
+    if (trailingStop == '0' || trailingStop == '' || trailingStop == null) trailingStop = null;
+
     return Position(
-      symbol: json['symbol'] as String,
-      side: json['side'] as String,
-      size: json['size'] as String,
-      avgPrice: json['avgPrice'] as String,
-      markPrice: json['markPrice'] as String? ?? '0',
-      liqPrice: json['liqPrice'] as String? ?? '0',
-      positionValue: json['positionValue'] as String,
-      unrealisedPnl: json['unrealisedPnl'] as String,
-      cumRealisedPnl: json['cumRealisedPnl'] as String? ?? '0',
-      leverage: json['leverage'] as String,
-      positionIdx: json['positionIdx'] as int,
-      takeProfit: json['takeProfit'] as String?,
-      stopLoss: json['stopLoss'] as String?,
-      trailingStop: json['trailingStop'] as String?,
-      createdTime: json['createdTime'] != null
+      symbol: json['symbol']?.toString() ?? '',
+      side: json['side']?.toString() ?? 'Buy',
+      size: json['size']?.toString() ?? '0',
+      avgPrice: avgPrice,
+      markPrice: json['markPrice']?.toString() ?? '0',
+      liqPrice: json['liqPrice']?.toString() ?? '0',
+      positionValue: json['positionValue']?.toString() ?? '0',
+      unrealisedPnl: json['unrealisedPnl']?.toString() ?? '0',
+      cumRealisedPnl: json['cumRealisedPnl']?.toString() ?? '0',
+      leverage: json['leverage']?.toString() ?? '1',
+      positionIdx: (json['positionIdx'] as num?)?.toInt() ?? 0,
+      positionIM: json['positionIM']?.toString() ?? '0',
+      takeProfit: takeProfit,
+      stopLoss: stopLoss,
+      trailingStop: trailingStop,
+      createdTime: json['createdTime'] != null && json['createdTime'].toString().isNotEmpty
           ? DateTime.fromMillisecondsSinceEpoch(
               int.parse(json['createdTime'].toString()))
           : null,
-      updatedTime: json['updatedTime'] != null
+      updatedTime: json['updatedTime'] != null && json['updatedTime'].toString().isNotEmpty
           ? DateTime.fromMillisecondsSinceEpoch(
               int.parse(json['updatedTime'].toString()))
           : null,
@@ -82,6 +98,7 @@ class Position {
       'cumRealisedPnl': cumRealisedPnl,
       'leverage': leverage,
       'positionIdx': positionIdx,
+      'positionIM': positionIM,
       if (takeProfit != null) 'takeProfit': takeProfit,
       if (stopLoss != null) 'stopLoss': stopLoss,
       if (trailingStop != null) 'trailingStop': trailingStop,
@@ -125,17 +142,34 @@ class Position {
   /// Gets leverage as double
   double get leverageAsDouble => double.tryParse(leverage) ?? 1.0;
 
-  /// Calculates PnL percentage
+  /// Gets position IM (Initial Margin) as double
+  double get positionIMAsDouble => double.tryParse(positionIM) ?? 0.0;
+
+  /// Calculates real-time unrealised PnL based on current markPrice
+  /// unrealisedPnl = (markPrice - avgPrice) × size × (Long이면 1, Short면 -1)
+  double get realtimeUnrealisedPnl {
+    if (sizeAsDouble == 0 || avgPriceAsDouble == 0) return 0.0;
+
+    final priceDiff = markPriceAsDouble - avgPriceAsDouble;
+    final direction = isLong ? 1.0 : -1.0;
+
+    return priceDiff * sizeAsDouble * direction;
+  }
+
+  /// Calculates PnL percentage (ROE - Return on Equity) using positionIM
+  /// ROE% = (unrealisedPnl / positionIM) × 100
   double get pnlPercent {
-    if (positionValueAsDouble == 0) return 0.0;
-    return (unrealisedPnlAsDouble / positionValueAsDouble) * 100;
+    if (positionIMAsDouble == 0) return 0.0;
+
+    // Use real-time calculated unrealisedPnl
+    return (realtimeUnrealisedPnl / positionIMAsDouble) * 100;
   }
 
   /// Returns true if position is in profit
-  bool get isInProfit => unrealisedPnlAsDouble > 0;
+  bool get isInProfit => realtimeUnrealisedPnl > 0;
 
   /// Returns true if position is in loss
-  bool get isInLoss => unrealisedPnlAsDouble < 0;
+  bool get isInLoss => realtimeUnrealisedPnl < 0;
 
   /// Gets the price change from entry
   double get priceChangePercent {
@@ -157,6 +191,7 @@ class Position {
     String? cumRealisedPnl,
     String? leverage,
     int? positionIdx,
+    String? positionIM,
     String? takeProfit,
     String? stopLoss,
     String? trailingStop,
@@ -175,6 +210,7 @@ class Position {
       cumRealisedPnl: cumRealisedPnl ?? this.cumRealisedPnl,
       leverage: leverage ?? this.leverage,
       positionIdx: positionIdx ?? this.positionIdx,
+      positionIM: positionIM ?? this.positionIM,
       takeProfit: takeProfit ?? this.takeProfit,
       stopLoss: stopLoss ?? this.stopLoss,
       trailingStop: trailingStop ?? this.trailingStop,

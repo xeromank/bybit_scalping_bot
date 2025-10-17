@@ -138,6 +138,15 @@ class CoinBalance {
   /// Gets unrealised PnL as double
   double get unrealisedPnlAsDouble => double.tryParse(unrealisedPnl) ?? 0.0;
 
+  /// Gets equity as double (현재 잔고 가치)
+  double get equityAsDouble => double.tryParse(equity) ?? 0.0;
+
+  /// Gets total position IM as double (포지션에 투여한 금액)
+  double get totalPositionIMAsDouble => double.tryParse(totalPositionIM) ?? 0.0;
+
+  /// Gets available balance (주문 가능한 금액 = walletBalance - totalPositionIM)
+  double get availableBalance => walletBalanceAsDouble - totalPositionIMAsDouble;
+
   @override
   String toString() => 'CoinBalance(coin: $coin, balance: $walletBalance)';
 
