@@ -16,6 +16,7 @@ import 'package:bybit_scalping_bot/constants/app_constants.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
 import 'package:bybit_scalping_bot/utils/signal_strength.dart';
 import 'package:bybit_scalping_bot/utils/notification_helper.dart';
+import 'package:bybit_scalping_bot/services/database_service.dart';
 
 /// Trading signal status
 enum TradingStatus {
@@ -33,6 +34,7 @@ enum TradingStatus {
 class TradingProvider extends ChangeNotifier {
   final BybitRepository _repository;
   final BybitPublicWebSocketClient? _publicWsClient;
+  final DatabaseService _databaseService = DatabaseService();
 
   // Configuration
   String _symbol = AppConstants.defaultSymbol;
@@ -78,6 +80,7 @@ class TradingProvider extends ChangeNotifier {
   SignalStrength? _currentSignalStrength; // Current signal strength
   TradingStatus _tradingStatus = TradingStatus.noSignal; // Current trading status
   DateTime? _lastStatusUpdate; // Last status update time
+  DateTime? _lastDataUpdate; // Last data update time (WebSocket)
 
   TradingProvider({
     required BybitRepository repository,
@@ -87,6 +90,9 @@ class TradingProvider extends ChangeNotifier {
 
   /// Initializes the provider by subscribing to default symbol's kline
   Future<void> initialize() async {
+    // Load trade logs from database
+    await _loadLogsFromDatabase();
+
     // Load initial kline data from API first for immediate indicator display
     await _loadInitialKlineData();
 
@@ -179,6 +185,7 @@ class TradingProvider extends ChangeNotifier {
   SignalStrength? get currentSignalStrength => _currentSignalStrength;
   TradingStatus get tradingStatus => _tradingStatus;
   DateTime? get lastStatusUpdate => _lastStatusUpdate;
+  DateTime? get lastDataUpdate => _lastDataUpdate;
 
   // Trading Mode Getters
   TradingMode get tradingMode => _tradingMode;
@@ -523,6 +530,7 @@ class TradingProvider extends ChangeNotifier {
       // Update current price for UI display (even for unconfirmed candles)
       if (closePrice > 0) {
         _currentPrice = closePrice;
+        _lastDataUpdate = DateTime.now();
       }
 
       if (closePrice > 0 && volume > 0) {
@@ -870,14 +878,19 @@ class TradingProvider extends ChangeNotifier {
       // Log detailed technical indicators at order time
       _logTechnicalIndicatorsSnapshot(analysis, signalStrength, isLong);
 
-      await _createOrderWithPrice(side, analysis.currentPrice);
+      await _createOrderWithPrice(side, analysis, signalStrength);
     } catch (e) {
       _addLog(TradeLog.error('Entry signal error: ${e.toString()}'));
     }
   }
 
   /// Creates a market order with price info
-  Future<void> _createOrderWithPrice(String side, double price) async {
+  Future<void> _createOrderWithPrice(
+    String side,
+    TechnicalAnalysis analysis,
+    SignalStrength signalStrength,
+  ) async {
+    final double price = analysis.currentPrice;
     try {
       // Get instrument info to determine correct qty precision
       final instrumentInfo = await _repository.apiClient.getInstrumentsInfo(
@@ -997,6 +1010,27 @@ class TradingProvider extends ChangeNotifier {
 
         // Trigger notification (vibration + haptic feedback)
         await NotificationHelper.notifyOrderEvent();
+
+        // Save order to database
+        await _databaseService.insertOrderHistory(
+          symbol: _symbol,
+          side: side,
+          entryPrice: price,
+          quantity: double.parse(qtyStr),
+          leverage: int.parse(_leverage),
+          tpPrice: double.parse(tpPriceStr),
+          slPrice: double.parse(slPriceStr),
+          signalStrength: signalStrength.totalScore,
+          rsi6: analysis.rsi6,
+          rsi14: analysis.rsi12,
+          ema9: analysis.ema9,
+          ema21: analysis.ema21,
+          volume: analysis.currentVolume,
+          volumeMa5: analysis.volumeMA5,
+          bollingerUpper: analysis.bollingerBands?.upper,
+          bollingerMiddle: analysis.bollingerBands?.middle,
+          bollingerLower: analysis.bollingerBands?.lower,
+        );
       } else {
         _addLog(TradeLog.error(
           'Order failed: ${result.errorOrNull}',
@@ -1011,10 +1045,17 @@ class TradingProvider extends ChangeNotifier {
   void _addLog(TradeLog log) {
     _logs.insert(0, log);
 
-    // Keep only the latest logs
+    // Keep only the latest logs in memory (100)
     if (_logs.length > AppConstants.maxLogEntries) {
       _logs = _logs.take(AppConstants.maxLogEntries).toList();
     }
+
+    // Save to database
+    _databaseService.insertTradeLog(
+      type: log.level.name,
+      message: log.message,
+      symbol: _symbol,
+    );
 
     notifyListeners();
   }
@@ -1023,6 +1064,50 @@ class TradingProvider extends ChangeNotifier {
   void clearLogs() {
     _logs.clear();
     notifyListeners();
+  }
+
+  /// Loads recent logs from database on app startup
+  Future<void> _loadLogsFromDatabase() async {
+    try {
+      final dbLogs = await _databaseService.getRecentTradeLogs(
+        limit: AppConstants.maxLogEntries,
+        symbol: _symbol,
+      );
+
+      // Convert database records to TradeLog objects
+      _logs = dbLogs.map((record) {
+        final timestamp = DateTime.fromMillisecondsSinceEpoch(record['timestamp'] as int);
+        final type = record['type'] as String;
+        final message = record['message'] as String;
+
+        // Map type string to LogLevel
+        LogLevel level;
+        switch (type) {
+          case 'success':
+            level = LogLevel.success;
+            break;
+          case 'warning':
+            level = LogLevel.warning;
+            break;
+          case 'error':
+            level = LogLevel.error;
+            break;
+          default:
+            level = LogLevel.info;
+        }
+
+        return TradeLog(
+          timestamp: timestamp,
+          message: message,
+          level: level,
+        );
+      }).toList();
+
+      print('TradingProvider: Loaded ${_logs.length} logs from database');
+      notifyListeners();
+    } catch (e) {
+      print('TradingProvider: Error loading logs from database: $e');
+    }
   }
 
   /// Updates trading status and timestamp

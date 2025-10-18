@@ -561,10 +561,10 @@ class _TradingControlsState extends State<TradingControls> {
                                 ),
                               ],
                             ),
-                            // Last update time
-                            if (provider.lastStatusUpdate != null)
+                            // Last data update time
+                            if (provider.lastDataUpdate != null)
                               Text(
-                                _formatUpdateTime(provider.lastStatusUpdate!),
+                                _formatUpdateTime(provider.lastDataUpdate!),
                                 style: const TextStyle(
                                   fontSize: 11,
                                   color: ThemeConstants.textSecondaryColor,
