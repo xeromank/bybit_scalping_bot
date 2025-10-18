@@ -29,6 +29,10 @@ class _TradingControlsState extends State<TradingControls> {
   late TextEditingController _rsi14LongController;
   late TextEditingController _rsi14ShortController;
 
+  // Cache last technical analysis to prevent flickering
+  TechnicalAnalysis? _lastTechnicalAnalysis;
+  double? _lastPrice;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +73,16 @@ class _TradingControlsState extends State<TradingControls> {
       builder: (context, provider, child) {
         final isRunning = provider.isRunning;
 
+        // Update cached technical analysis to prevent flickering
+        if (provider.technicalAnalysis != null) {
+          _lastTechnicalAnalysis = provider.technicalAnalysis;
+        }
+
+        // Update cached current price to prevent flickering
+        if (provider.currentPrice != null) {
+          _lastPrice = provider.currentPrice;
+        }
+
         // Update text fields when provider values change (only for TP/SL when mode changes)
         if (_profitController.text != provider.profitTargetPercent.toString()) {
           _profitController.text = provider.profitTargetPercent.toString();
@@ -82,7 +96,7 @@ class _TradingControlsState extends State<TradingControls> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Row 0: Trading Mode Selection
+              // Trading Mode Selection
               DropdownButtonFormField<TradingMode>(
                 value: provider.tradingMode,
                 decoration: ThemeConstants.inputDecoration(
@@ -138,117 +152,401 @@ class _TradingControlsState extends State<TradingControls> {
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // Row 1: Symbol with price
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        DropdownButtonFormField<String>(
-                          value: provider.symbol,
-                          decoration: ThemeConstants.inputDecoration(
-                            labelText: '심볼',
-                            prefixIcon: Icons.currency_bitcoin,
-                          ),
-                          items: const [
-                            DropdownMenuItem(value: 'BTCUSDT', child: Text('BTC/USDT')),
-                            DropdownMenuItem(value: 'ETHUSDT', child: Text('ETH/USDT')),
-                            DropdownMenuItem(value: 'SOLUSDT', child: Text('SOL/USDT')),
-                            DropdownMenuItem(value: 'BNBUSDT', child: Text('BNB/USDT')),
-                            DropdownMenuItem(value: 'XRPUSDT', child: Text('XRP/USDT')),
-                            DropdownMenuItem(value: 'DOGEUSDT', child: Text('DOGE/USDT')),
-                            DropdownMenuItem(value: 'ADAUSDT', child: Text('ADA/USDT')),
-                          ],
-                          onChanged: isRunning
-                              ? null
-                              : (value) {
-                                  if (value != null) {
-                                    provider.setSymbol(value);
-                                  }
-                                },
-                        ),
-                        if (provider.currentPrice != null) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            '현재가: \$${provider.currentPrice!.toStringAsFixed(2)}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: ThemeConstants.primaryColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ],
+              // ===== FIXED SECTION: Current Price =====
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ThemeConstants.spacingSmall,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: ThemeConstants.primaryColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      '현재가: ',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: ThemeConstants.textSecondaryColor,
+                      ),
                     ),
-                  ),
-                ],
+                    Text(
+                      _lastPrice != null
+                          ? '\$${_lastPrice!.toStringAsFixed(2)}'
+                          : '로딩 중...',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: ThemeConstants.primaryColor,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // Row 2: Amount (USDT) and Leverage
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _amountController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: '투입 자금 (USDT)',
-                        prefixIcon: Icons.attach_money,
-                      ),
-                      keyboardType: TextInputType.number,
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final amount = double.tryParse(value);
-                        if (amount != null) {
-                          provider.setOrderAmount(amount);
-                        }
-                      },
-                    ),
+              // ===== FIXED SECTION: Technical Indicators =====
+              Container(
+                padding: const EdgeInsets.all(ThemeConstants.spacingSmall),
+                decoration: BoxDecoration(
+                  color: ThemeConstants.primaryColor.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
+                  border: Border.all(
+                    color: ThemeConstants.primaryColor.withValues(alpha: 0.2),
                   ),
-                  const SizedBox(width: ThemeConstants.spacingSmall),
-                  Expanded(
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '기술적 지표',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: ThemeConstants.textPrimaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    // First row: RSI indicators (always visible with height)
+                    SizedBox(
+                      height: 38,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildIndicator(
+                            'RSI(6)',
+                            _lastTechnicalAnalysis?.rsi6.toStringAsFixed(1) ?? '--',
+                            _lastTechnicalAnalysis != null
+                                ? _getRSIColor(_lastTechnicalAnalysis!.rsi6)
+                                : ThemeConstants.textSecondaryColor,
+                          ),
+                          _buildIndicator(
+                            'RSI(14)',
+                            _lastTechnicalAnalysis?.rsi12.toStringAsFixed(1) ?? '--',
+                            _lastTechnicalAnalysis != null
+                                ? _getRSIColor(_lastTechnicalAnalysis!.rsi12)
+                                : ThemeConstants.textSecondaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Second row: Volume MA indicators (always visible with height)
+                    SizedBox(
+                      height: 38,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildIndicator(
+                            'Vol MA5',
+                            _lastTechnicalAnalysis != null
+                                ? '${(_lastTechnicalAnalysis!.volumeMA5 / 1000).toStringAsFixed(1)}k'
+                                : '--',
+                            ThemeConstants.textPrimaryColor,
+                          ),
+                          _buildIndicator(
+                            'Vol MA10',
+                            _lastTechnicalAnalysis != null
+                                ? '${(_lastTechnicalAnalysis!.volumeMA10 / 1000).toStringAsFixed(1)}k'
+                                : '--',
+                            ThemeConstants.textPrimaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Third row: EMA indicators (always visible with height)
+                    SizedBox(
+                      height: 38,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildIndicator(
+                            'EMA(9)',
+                            _lastTechnicalAnalysis != null
+                                ? '\$${_lastTechnicalAnalysis!.ema9.toStringAsFixed(1)}'
+                                : '--',
+                            ThemeConstants.textPrimaryColor,
+                          ),
+                          _buildIndicator(
+                            'EMA(21)',
+                            _lastTechnicalAnalysis != null
+                                ? '\$${_lastTechnicalAnalysis!.ema21.toStringAsFixed(1)}'
+                                : '--',
+                            ThemeConstants.textPrimaryColor,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Fourth row: Bollinger Bands (only show in Bollinger mode)
+                    if (_lastTechnicalAnalysis?.mode == TradingMode.bollinger &&
+                        _lastTechnicalAnalysis?.bollingerBands != null) ...[
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 38,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildIndicator(
+                              'BB Upper',
+                              '\$${_lastTechnicalAnalysis!.bollingerBands!.upper.toStringAsFixed(1)}',
+                              Colors.red.shade700,
+                            ),
+                            _buildIndicator(
+                              'BB Lower',
+                              '\$${_lastTechnicalAnalysis!.bollingerBands!.lower.toStringAsFixed(1)}',
+                              Colors.green.shade700,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 38,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildIndicator(
+                              'BB RSI(14)',
+                              _lastTechnicalAnalysis!.bollingerRsi!.toStringAsFixed(1),
+                              _getRSIColor(_lastTechnicalAnalysis!.bollingerRsi!),
+                            ),
+                            _buildIndicator(
+                              'BB Middle',
+                              '\$${_lastTechnicalAnalysis!.bollingerBands!.middle.toStringAsFixed(1)}',
+                              ThemeConstants.textPrimaryColor,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    // Trading Status Section (after technical indicators)
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getStatusBackgroundColor(provider.tradingStatus),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // Status with WebSocket connection indicator
+                          Row(
+                            children: [
+                              // WebSocket connection indicator
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: provider.isWebSocketConnected
+                                      ? ThemeConstants.successColor
+                                      : ThemeConstants.errorColor,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                _getStatusIcon(provider.tradingStatus),
+                                size: 16,
+                                color: _getStatusColor(provider.tradingStatus),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _getStatusText(provider.tradingStatus),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getStatusColor(provider.tradingStatus),
+                                ),
+                              ),
+                            ],
+                          ),
+                          // Last data update time
+                          if (provider.lastDataUpdate != null)
+                            Text(
+                              _formatUpdateTime(provider.lastDataUpdate!),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: ThemeConstants.textSecondaryColor,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: ThemeConstants.spacingSmall),
+
+              // ===== COLLAPSIBLE SECTION: Symbol Selection =====
+              ExpansionTile(
+                title: Row(
+                  children: [
+                    const Icon(Icons.currency_bitcoin, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '심볼 선택',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      provider.symbol,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: ThemeConstants.primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                initiallyExpanded: false,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: DropdownButtonFormField<String>(
-                      value: provider.leverage,
+                      value: provider.symbol,
                       decoration: ThemeConstants.inputDecoration(
-                        labelText: '레버리지',
-                        prefixIcon: Icons.trending_up,
+                        labelText: '심볼',
+                        prefixIcon: Icons.currency_bitcoin,
                       ),
                       items: const [
-                        DropdownMenuItem(value: '2', child: Text('2x')),
-                        DropdownMenuItem(value: '3', child: Text('3x')),
-                        DropdownMenuItem(value: '5', child: Text('5x')),
-                        DropdownMenuItem(value: '10', child: Text('10x')),
-                        DropdownMenuItem(value: '15', child: Text('15x')),
-                        DropdownMenuItem(value: '20', child: Text('20x')),
-                        DropdownMenuItem(value: '30', child: Text('30x')),
-                        DropdownMenuItem(value: '50', child: Text('50x')),
-                        DropdownMenuItem(value: '75', child: Text('75x')),
-                        DropdownMenuItem(value: '100', child: Text('100x')),
+                        DropdownMenuItem(value: 'BTCUSDT', child: Text('BTC/USDT')),
+                        DropdownMenuItem(value: 'ETHUSDT', child: Text('ETH/USDT')),
+                        DropdownMenuItem(value: 'SOLUSDT', child: Text('SOL/USDT')),
+                        DropdownMenuItem(value: 'BNBUSDT', child: Text('BNB/USDT')),
+                        DropdownMenuItem(value: 'XRPUSDT', child: Text('XRP/USDT')),
+                        DropdownMenuItem(value: 'DOGEUSDT', child: Text('DOGE/USDT')),
+                        DropdownMenuItem(value: 'ADAUSDT', child: Text('ADA/USDT')),
                       ],
                       onChanged: isRunning
                           ? null
                           : (value) {
                               if (value != null) {
-                                provider.setLeverage(value);
+                                provider.setSymbol(value);
                               }
                             },
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // TP/SL Settings (Collapsible)
+              // ===== COLLAPSIBLE SECTION: Amount & Leverage =====
               ExpansionTile(
-                title: const Text(
-                  'TP/SL 설정',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+                title: Row(
+                  children: [
+                    const Icon(Icons.attach_money, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '투입 자금 & 레버리지',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '\$${provider.orderAmount.toStringAsFixed(0)} · ${provider.leverage}x',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: ThemeConstants.primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
-                initiallyExpanded: true,
+                initiallyExpanded: false,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _amountController,
+                            decoration: ThemeConstants.inputDecoration(
+                              labelText: '투입 자금 (USDT)',
+                              prefixIcon: Icons.attach_money,
+                            ),
+                            keyboardType: TextInputType.number,
+                            enabled: !isRunning,
+                            onChanged: (value) {
+                              final amount = double.tryParse(value);
+                              if (amount != null) {
+                                provider.setOrderAmount(amount);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: ThemeConstants.spacingSmall),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: provider.leverage,
+                            decoration: ThemeConstants.inputDecoration(
+                              labelText: '레버리지',
+                              prefixIcon: Icons.trending_up,
+                            ),
+                            items: const [
+                              DropdownMenuItem(value: '2', child: Text('2x')),
+                              DropdownMenuItem(value: '3', child: Text('3x')),
+                              DropdownMenuItem(value: '5', child: Text('5x')),
+                              DropdownMenuItem(value: '10', child: Text('10x')),
+                              DropdownMenuItem(value: '15', child: Text('15x')),
+                              DropdownMenuItem(value: '20', child: Text('20x')),
+                              DropdownMenuItem(value: '30', child: Text('30x')),
+                              DropdownMenuItem(value: '50', child: Text('50x')),
+                              DropdownMenuItem(value: '75', child: Text('75x')),
+                              DropdownMenuItem(value: '100', child: Text('100x')),
+                            ],
+                            onChanged: isRunning
+                                ? null
+                                : (value) {
+                                    if (value != null) {
+                                      provider.setLeverage(value);
+                                    }
+                                  },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // ===== COLLAPSIBLE SECTION: TP/SL Settings =====
+              ExpansionTile(
+                title: Row(
+                  children: [
+                    const Icon(Icons.monetization_on, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'TP/SL 설정',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'TP ${provider.profitTargetPercent.toStringAsFixed(1)}% · SL ${provider.stopLossPercent.toStringAsFixed(1)}%',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: ThemeConstants.primaryColor,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                initiallyExpanded: false,
                 children: [
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -301,14 +599,20 @@ class _TradingControlsState extends State<TradingControls> {
                 ],
               ),
 
-              // Advanced Settings (RSI) - Collapsible
+              // ===== COLLAPSIBLE SECTION: Advanced Settings (RSI) =====
               ExpansionTile(
-                title: const Text(
-                  '고급 설정 (RSI)',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
+                title: Row(
+                  children: [
+                    const Icon(Icons.settings, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '고급 설정 (RSI)',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
                 initiallyExpanded: false,
                 children: [
@@ -416,213 +720,7 @@ class _TradingControlsState extends State<TradingControls> {
                 ],
               ),
 
-              // Current Price Display
-              if (provider.currentPrice != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: ThemeConstants.spacingSmall,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: ThemeConstants.primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        '현재가: ',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: ThemeConstants.textSecondaryColor,
-                        ),
-                      ),
-                      Text(
-                        '\$${provider.currentPrice!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: ThemeConstants.primaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: ThemeConstants.spacingSmall),
-              ],
-
-              // Technical Indicators Display
-              if (provider.technicalAnalysis != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(ThemeConstants.spacingSmall),
-                  decoration: BoxDecoration(
-                    color: ThemeConstants.primaryColor.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
-                    border: Border.all(
-                      color: ThemeConstants.primaryColor.withValues(alpha: 0.2),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '기술적 지표',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: ThemeConstants.textPrimaryColor,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      // First row: RSI indicators
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildIndicator(
-                            'RSI(6)',
-                            provider.technicalAnalysis!.rsi6.toStringAsFixed(1),
-                            _getRSIColor(provider.technicalAnalysis!.rsi6),
-                          ),
-                          _buildIndicator(
-                            'RSI(14)',
-                            provider.technicalAnalysis!.rsi12.toStringAsFixed(1),
-                            _getRSIColor(provider.technicalAnalysis!.rsi12),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      // Second row: Volume MA indicators
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildIndicator(
-                            'Vol MA5',
-                            '${(provider.technicalAnalysis!.volumeMA5 / 1000).toStringAsFixed(1)}k',
-                            ThemeConstants.textPrimaryColor,
-                          ),
-                          _buildIndicator(
-                            'Vol MA10',
-                            '${(provider.technicalAnalysis!.volumeMA10 / 1000).toStringAsFixed(1)}k',
-                            ThemeConstants.textPrimaryColor,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      // Third row: EMA indicators (always show EMA9 and EMA21)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _buildIndicator(
-                            'EMA(9)',
-                            '\$${provider.technicalAnalysis!.ema9.toStringAsFixed(1)}',
-                            ThemeConstants.textPrimaryColor,
-                          ),
-                          _buildIndicator(
-                            'EMA(21)',
-                            '\$${provider.technicalAnalysis!.ema21.toStringAsFixed(1)}',
-                            ThemeConstants.textPrimaryColor,
-                          ),
-                        ],
-                      ),
-                      // Fourth row: Bollinger Bands (only show in Bollinger mode)
-                      if (provider.technicalAnalysis!.mode == TradingMode.bollinger &&
-                          provider.technicalAnalysis!.bollingerBands != null) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildIndicator(
-                              'BB Upper',
-                              '\$${provider.technicalAnalysis!.bollingerBands!.upper.toStringAsFixed(1)}',
-                              Colors.red.shade700,
-                            ),
-                            _buildIndicator(
-                              'BB Lower',
-                              '\$${provider.technicalAnalysis!.bollingerBands!.lower.toStringAsFixed(1)}',
-                              Colors.green.shade700,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildIndicator(
-                              'BB RSI(14)',
-                              provider.technicalAnalysis!.bollingerRsi!.toStringAsFixed(1),
-                              _getRSIColor(provider.technicalAnalysis!.bollingerRsi!),
-                            ),
-                            _buildIndicator(
-                              'BB Middle',
-                              '\$${provider.technicalAnalysis!.bollingerBands!.middle.toStringAsFixed(1)}',
-                              ThemeConstants.textPrimaryColor,
-                            ),
-                          ],
-                        ),
-                      ],
-                      // Trading Status Section (after technical indicators)
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getStatusBackgroundColor(provider.tradingStatus),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            // Status with WebSocket connection indicator
-                            Row(
-                              children: [
-                                // WebSocket connection indicator
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: provider.isWebSocketConnected
-                                        ? ThemeConstants.successColor
-                                        : ThemeConstants.errorColor,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Icon(
-                                  _getStatusIcon(provider.tradingStatus),
-                                  size: 16,
-                                  color: _getStatusColor(provider.tradingStatus),
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  _getStatusText(provider.tradingStatus),
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: _getStatusColor(provider.tradingStatus),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            // Last data update time
-                            if (provider.lastDataUpdate != null)
-                              Text(
-                                _formatUpdateTime(provider.lastDataUpdate!),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  color: ThemeConstants.textSecondaryColor,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: ThemeConstants.spacingSmall),
-              ],
+              const SizedBox(height: ThemeConstants.spacingMedium),
 
               // Start/Stop Button
               isRunning
@@ -713,7 +811,7 @@ class _TradingControlsState extends State<TradingControls> {
   Color _getStatusBackgroundColor(TradingStatus status) {
     switch (status) {
       case TradingStatus.noSignal:
-        return ThemeConstants.cardColor.withOpacity(0.5);
+        return ThemeConstants.cardColor.withValues(alpha: 0.5);
       case TradingStatus.ready:
         return Colors.orange.shade50;
       case TradingStatus.ordered:

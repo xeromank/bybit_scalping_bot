@@ -21,6 +21,9 @@ class BalanceProvider extends ChangeNotifier {
   final BybitWebSocketClient? _wsClient;
   final BybitPublicWebSocketClient? _publicWsClient;
 
+  // Callback for position closure (notify TradingProvider immediately)
+  Function(String symbol)? onPositionClosed;
+
   // State
   WalletBalance? _balance;
   List<Position> _positions = [];
@@ -223,6 +226,10 @@ class BalanceProvider extends ChangeNotifier {
 
             // Unsubscribe from kline for this symbol
             _unsubscribeFromKlineForSymbol(position.symbol);
+
+            // Notify TradingProvider immediately for instant re-entry
+            Logger.log('BalanceProvider: Notifying position closed for ${position.symbol}');
+            onPositionClosed?.call(position.symbol);
           }
         }
       }

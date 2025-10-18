@@ -83,6 +83,9 @@ class TradingProvider extends ChangeNotifier {
   DateTime? _lastStatusUpdate; // Last status update time
   DateTime? _lastDataUpdate; // Last data update time (WebSocket)
   bool _isWebSocketConnected = false; // WebSocket connection status
+  bool _disposed = false; // Track if provider is disposed
+  bool _isKlineSubscribed = false; // Track if kline is already subscribed
+  String? _subscribedSymbol; // Track which symbol is subscribed
 
   TradingProvider({
     required BybitRepository repository,
@@ -107,21 +110,37 @@ class TradingProvider extends ChangeNotifier {
     }
   }
 
+  /// Handles immediate position closure notification from BalanceProvider
+  ///
+  /// This is called via WebSocket when a position is closed (TP/SL hit),
+  /// allowing instant re-entry detection instead of waiting for polling timer
+  void handlePositionClosed(String symbol) {
+    if (symbol == _symbol && _currentPosition != null) {
+      Logger.log('TradingProvider: Position closed via WebSocket for $symbol - enabling immediate re-entry');
+      _currentPosition = null;
+      _addLog(TradeLog.info('Position closed (TP/SL hit) - ready for re-entry'));
+      notifyListeners();
+    }
+  }
+
   /// Initializes the provider by subscribing to default symbol's kline
   Future<void> initialize() async {
     // Load trade logs from database
     await _loadLogsFromDatabase();
+    if (_disposed) return;
 
     // Load initial kline data from API first for immediate indicator display
     await _loadInitialKlineData();
+    if (_disposed) return;
 
     if (_publicWsClient != null && _publicWsClient!.isConnected) {
       await _subscribeToKline();
+      if (_disposed) return;
       Logger.log('TradingProvider: Initialized with default symbol: $_symbol');
     }
 
     // If bot is running (e.g., after hot reload), immediately check position
-    if (_isRunning) {
+    if (_isRunning && !_disposed) {
       Logger.log('TradingProvider: Bot is running after reload, checking position...');
       await _updatePositionStatus();
     }
@@ -496,11 +515,29 @@ class TradingProvider extends ChangeNotifier {
       return;
     }
 
+    // Check if already subscribed to the same symbol
+    if (_isKlineSubscribed && _subscribedSymbol == _symbol) {
+      Logger.log('TradingProvider: Already subscribed to kline for $_symbol');
+      return;
+    }
+
     try {
+      // Unsubscribe from previous symbol if different
+      if (_isKlineSubscribed && _subscribedSymbol != null && _subscribedSymbol != _symbol) {
+        final oldTopic = 'kline.${AppConstants.defaultMainInterval}.$_subscribedSymbol';
+        await _publicWsClient!.unsubscribe(oldTopic);
+        _klineSubscription?.cancel();
+        Logger.log('TradingProvider: Unsubscribed from $oldTopic');
+      }
+
       // Subscribe to 5-minute kline for the current symbol
       final topic = 'kline.${AppConstants.defaultMainInterval}.$_symbol';
       await _publicWsClient!.subscribe(topic);
       _addLog(TradeLog.info('Subscribed to kline WebSocket: $topic'));
+
+      // Mark as subscribed
+      _isKlineSubscribed = true;
+      _subscribedSymbol = _symbol;
 
       // Listen to kline updates
       _klineSubscription?.cancel();
@@ -1206,8 +1243,11 @@ class TradingProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _monitoringTimer?.cancel();
     _klineSubscription?.cancel();
+    _isKlineSubscribed = false;
+    _subscribedSymbol = null;
     super.dispose();
   }
 }

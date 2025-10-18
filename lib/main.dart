@@ -126,12 +126,31 @@ class MyApp extends StatelessWidget {
           },
         ),
 
-        // Trading Provider (depends on auth state)
-        ChangeNotifierProxyProvider<AuthProvider, TradingProvider?>(
+        // Trading Provider (depends on auth state and balance provider)
+        ChangeNotifierProxyProvider2<AuthProvider, BalanceProvider?, TradingProvider?>(
           create: (context) => null,
-          update: (context, authProvider, previous) {
+          update: (context, authProvider, balanceProvider, previous) {
             if (authProvider.isAuthenticated &&
                 authProvider.credentials != null) {
+              // Reuse previous provider if it exists to preserve state (like _isRunning)
+              // Only create a new one if there wasn't one before
+              if (previous != null) {
+                // Update callbacks for the existing provider
+                if (balanceProvider != null) {
+                  balanceProvider.onPositionClosed = (symbol) {
+                    previous.handlePositionClosed(symbol);
+                  };
+                }
+                // Update WebSocket connection status callback
+                if (sharedPublicWsClient != null) {
+                  sharedPublicWsClient!.onConnectionStatusChanged = (isConnected) {
+                    previous.handleWebSocketStatusChange(isConnected);
+                  };
+                }
+                return previous;
+              }
+
+              // Create new provider only when there wasn't one before
               final apiClient = BybitApiClient(
                 apiKey: authProvider.credentials!.apiKey,
                 apiSecret: authProvider.credentials!.apiSecret,
@@ -153,6 +172,15 @@ class MyApp extends StatelessWidget {
               sharedPublicWsClient!.onConnectionStatusChanged = (isConnected) {
                 tradingProvider.handleWebSocketStatusChange(isConnected);
               };
+
+              // Set position closure callback from BalanceProvider to TradingProvider
+              // This enables immediate re-entry when position is closed via WebSocket
+              if (balanceProvider != null) {
+                balanceProvider.onPositionClosed = (symbol) {
+                  tradingProvider.handlePositionClosed(symbol);
+                };
+                Logger.log('Main: Connected position closure callback from BalanceProvider to TradingProvider');
+              }
 
               // Connect public WebSocket and initialize (only if not already connected)
               if (!sharedPublicWsClient!.isConnected) {
