@@ -1,22 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:bybit-exchange.github.io)",
-      "Bash(flutter pub get:*)",
-      "Bash(tree:*)",
-      "Bash(flutter analyze:*)",
-      "Bash(test:*)",
-      "Bash(cat:*)",
-      "Bash(flutter doctor:*)",
-      "Bash(flutter devices:*)",
-      "Bash(flutter emulators:*)",
-      "Bash(open:*)",
-      "Bash(flutter run:*)",
-      "Bash(nc:*)",
-      "Bash(flutter clean:*)",
-      "Bash(pkill:*)",
-      "Bash(r)",
-      "Bash(git restore:*)"
+      "WebSearch"
     ],
     "deny": [],
     "ask": []

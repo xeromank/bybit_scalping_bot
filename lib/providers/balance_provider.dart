@@ -5,6 +5,7 @@ import 'package:bybit_scalping_bot/models/position.dart';
 import 'package:bybit_scalping_bot/repositories/bybit_repository.dart';
 import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 // For CoinBalance type
 export 'package:bybit_scalping_bot/models/wallet_balance.dart' show CoinBalance;
@@ -120,23 +121,23 @@ class BalanceProvider extends ChangeNotifier {
 
     // If WebSocket is available, subscribe to position updates
     if (_wsClient != null && _wsClient!.isConnected) {
-      print('BalanceProvider: Using WebSocket for positions');
+      Logger.log('BalanceProvider: Using WebSocket for positions');
       await _subscribeToPositions();
     } else {
       // Fallback to API polling
-      print('BalanceProvider: Using API polling for positions (WebSocket: ${_wsClient != null ? "not connected" : "null"})');
+      Logger.log('BalanceProvider: Using API polling for positions (WebSocket: ${_wsClient != null ? "not connected" : "null"})');
       final positionsResult = await _repository.getAllPositions();
 
       positionsResult.when(
         success: (positions) {
           _positions = positions;
-          print('BalanceProvider: Loaded ${positions.length} positions from API');
+          Logger.log('BalanceProvider: Loaded ${positions.length} positions from API');
           for (final pos in positions) {
-            print('  - ${pos.symbol}: ${pos.isLong ? "LONG" : "SHORT"}');
-            print('    Entry: \$${pos.avgPrice}, Mark: \$${pos.markPrice}, Size: ${pos.size}');
-            print('    Position IM: \$${pos.positionIM}, Leverage: ${pos.leverage}x');
-            print('    Real-time unrealisedPnl: \$${pos.realtimeUnrealisedPnl.toStringAsFixed(2)}');
-            print('    ROE: ${pos.pnlPercent.toStringAsFixed(2)}%');
+            Logger.log('  - ${pos.symbol}: ${pos.isLong ? "LONG" : "SHORT"}');
+            Logger.log('    Entry: \$${pos.avgPrice}, Mark: \$${pos.markPrice}, Size: ${pos.size}');
+            Logger.log('    Position IM: \$${pos.positionIM}, Leverage: ${pos.leverage}x');
+            Logger.log('    Real-time unrealisedPnl: \$${pos.realtimeUnrealisedPnl.toStringAsFixed(2)}');
+            Logger.log('    ROE: ${pos.pnlPercent.toStringAsFixed(2)}%');
 
             // Subscribe to kline for real-time price updates
             _subscribeToKlineForSymbol(pos.symbol);
@@ -147,7 +148,7 @@ class BalanceProvider extends ChangeNotifier {
           if (_errorMessage == null) {
             _errorMessage = message;
           }
-          print('BalanceProvider: Failed to load positions: $message');
+          Logger.error('BalanceProvider: Failed to load positions: $message');
         },
       );
     }
@@ -185,18 +186,18 @@ class BalanceProvider extends ChangeNotifier {
   /// Handles position update from WebSocket
   void _handlePositionUpdate(Map<String, dynamic> data) {
     try {
-      print('BalanceProvider: Handling position update');
+      Logger.log('BalanceProvider: Handling position update');
       if (data['topic'] != 'position') {
         return;
       }
 
       final positionData = data['data'] as List<dynamic>;
-      print('BalanceProvider: Processing ${positionData.length} position(s)');
+      Logger.log('BalanceProvider: Processing ${positionData.length} position(s)');
 
       // Update positions
       for (final item in positionData) {
         final position = Position.fromJson(item as Map<String, dynamic>);
-        print('BalanceProvider: Position - ${position.symbol} ${position.isLong ? "LONG" : "SHORT"} size: ${position.size}');
+        Logger.log('BalanceProvider: Position - ${position.symbol} ${position.isLong ? "LONG" : "SHORT"} size: ${position.size}');
 
         // Find existing position by symbol
         final index = _positions.indexWhere((p) => p.symbol == position.symbol);
@@ -204,11 +205,11 @@ class BalanceProvider extends ChangeNotifier {
         if (position.isOpen) {
           if (index >= 0) {
             // Update existing position
-            print('BalanceProvider: Updating existing position');
+            Logger.log('BalanceProvider: Updating existing position');
             _positions[index] = position;
           } else {
             // Add new position
-            print('BalanceProvider: Adding new position');
+            Logger.log('BalanceProvider: Adding new position');
             _positions.add(position);
 
             // Subscribe to kline for this position's symbol
@@ -217,7 +218,7 @@ class BalanceProvider extends ChangeNotifier {
         } else {
           if (index >= 0) {
             // Remove closed position
-            print('BalanceProvider: Removing closed position');
+            Logger.log('BalanceProvider: Removing closed position');
             _positions.removeAt(index);
 
             // Unsubscribe from kline for this symbol
@@ -226,11 +227,11 @@ class BalanceProvider extends ChangeNotifier {
         }
       }
 
-      print('BalanceProvider: Total positions: ${_positions.length}');
+      Logger.log('BalanceProvider: Total positions: ${_positions.length}');
       _lastUpdated = DateTime.now();
       notifyListeners();
     } catch (e) {
-      print('BalanceProvider: Error handling position update: $e');
+      Logger.error('BalanceProvider: Error handling position update: $e');
       _errorMessage = 'Failed to parse position update: ${e.toString()}';
       notifyListeners();
     }
@@ -239,20 +240,20 @@ class BalanceProvider extends ChangeNotifier {
   /// Subscribes to kline WebSocket for a specific symbol to get real-time price
   Future<void> _subscribeToKlineForSymbol(String symbol) async {
     if (_publicWsClient == null || !_publicWsClient!.isConnected) {
-      print('BalanceProvider: Public WebSocket not available for kline subscription');
+      Logger.log('BalanceProvider: Public WebSocket not available for kline subscription');
       return;
     }
 
     // Don't subscribe if already subscribed
     if (_klineSubscriptions.containsKey(symbol)) {
-      print('BalanceProvider: Already subscribed to kline for $symbol');
+      Logger.log('BalanceProvider: Already subscribed to kline for $symbol');
       return;
     }
 
     try {
       final topic = 'kline.1.$symbol';
       await _publicWsClient!.subscribe(topic);
-      print('BalanceProvider: Subscribed to kline for $symbol');
+      Logger.log('BalanceProvider: Subscribed to kline for $symbol');
 
       // Listen to kline updates for real-time price
       final subscription = _publicWsClient!.getStream(topic)?.listen(
@@ -260,7 +261,7 @@ class BalanceProvider extends ChangeNotifier {
           _handleKlineUpdate(data, symbol);
         },
         onError: (error) {
-          print('BalanceProvider: Kline WebSocket error for $symbol: $error');
+          Logger.error('BalanceProvider: Kline WebSocket error for $symbol: $error');
         },
       );
 
@@ -268,7 +269,7 @@ class BalanceProvider extends ChangeNotifier {
         _klineSubscriptions[symbol] = subscription;
       }
     } catch (e) {
-      print('BalanceProvider: Failed to subscribe to kline for $symbol: $e');
+      Logger.error('BalanceProvider: Failed to subscribe to kline for $symbol: $e');
     }
   }
 
@@ -298,10 +299,10 @@ class BalanceProvider extends ChangeNotifier {
         // Notify listeners to update UI
         notifyListeners();
 
-        print('BalanceProvider: Updated $symbol markPrice to \$${closePrice.toStringAsFixed(2)} → unrealisedPnl: \$${_positions[index].realtimeUnrealisedPnl.toStringAsFixed(2)}, ROE: ${_positions[index].pnlPercent.toStringAsFixed(2)}%');
+        Logger.log('BalanceProvider: Updated $symbol markPrice to \$${closePrice.toStringAsFixed(2)} → unrealisedPnl: \$${_positions[index].realtimeUnrealisedPnl.toStringAsFixed(2)}, ROE: ${_positions[index].pnlPercent.toStringAsFixed(2)}%');
       }
     } catch (e) {
-      print('BalanceProvider: Error handling kline update: $e');
+      Logger.error('BalanceProvider: Error handling kline update: $e');
     }
   }
 
@@ -316,7 +317,7 @@ class BalanceProvider extends ChangeNotifier {
         await _publicWsClient!.unsubscribe('kline.1.$symbol');
       }
 
-      print('BalanceProvider: Unsubscribed from kline for $symbol');
+      Logger.log('BalanceProvider: Unsubscribed from kline for $symbol');
     }
   }
 
@@ -346,12 +347,12 @@ class BalanceProvider extends ChangeNotifier {
     _autoRefreshTimer = Timer.periodic(
       const Duration(seconds: 10),
       (timer) async {
-        print('BalanceProvider: Auto-refreshing balance...');
+        Logger.log('BalanceProvider: Auto-refreshing balance...');
         await _refreshBalanceOnly();
       },
     );
 
-    print('BalanceProvider: Auto-refresh timer started (every 10 seconds)');
+    Logger.log('BalanceProvider: Auto-refresh timer started (every 10 seconds)');
   }
 
   /// Refreshes only the balance (without reloading positions)
@@ -370,7 +371,7 @@ class BalanceProvider extends ChangeNotifier {
       },
       failure: (message, exception) {
         // Silently fail for auto-refresh
-        print('BalanceProvider: Auto-refresh failed: $message');
+        Logger.warning('BalanceProvider: Auto-refresh failed: $message');
       },
     );
   }
@@ -379,7 +380,7 @@ class BalanceProvider extends ChangeNotifier {
   void stopAutoRefresh() {
     _autoRefreshTimer?.cancel();
     _autoRefreshTimer = null;
-    print('BalanceProvider: Auto-refresh timer stopped');
+    Logger.log('BalanceProvider: Auto-refresh timer stopped');
   }
 
   @override

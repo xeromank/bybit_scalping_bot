@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:crypto/crypto.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// WebSocket client for Bybit private channels
 ///
@@ -51,13 +52,13 @@ class BybitWebSocketClient {
   /// Connects to WebSocket and authenticates
   Future<void> connect() async {
     if (_isConnected || _isConnecting) {
-      print('WebSocket: Already connected or connecting');
+      Logger.log('WebSocket: Already connected or connecting');
       return;
     }
 
     _isConnecting = true;
     _shouldReconnect = true;
-    print('WebSocket: Connecting to $_wsUrl');
+    Logger.log('WebSocket: Connecting to $_wsUrl');
 
     try {
       // Create WebSocket connection
@@ -80,7 +81,7 @@ class BybitWebSocketClient {
       _isConnected = true;
       _isConnecting = false;
 
-      print('WebSocket: Connected and authenticated');
+      Logger.log('WebSocket: Connected and authenticated');
       onConnectionStatusChanged?.call(true);
 
       // Start ping timer (send ping every 20 seconds)
@@ -88,20 +89,20 @@ class BybitWebSocketClient {
 
       // Resubscribe to previous topics
       if (_subscribedTopics.isNotEmpty) {
-        print('WebSocket: Resubscribing to ${_subscribedTopics.length} topics');
+        Logger.log('WebSocket: Resubscribing to ${_subscribedTopics.length} topics');
         for (final topic in _subscribedTopics) {
           await subscribe(topic);
         }
       }
     } catch (e) {
-      print('WebSocket: Connection error: $e');
+      Logger.error('WebSocket: Connection error: $e');
       _isConnecting = false;
       _isConnected = false;
       onConnectionStatusChanged?.call(false);
 
       // Auto-reconnect after error
       if (_shouldReconnect) {
-        print('WebSocket: Scheduling reconnection in 5 seconds...');
+        Logger.log('WebSocket: Scheduling reconnection in 5 seconds...');
         Future.delayed(const Duration(seconds: 5), () => _reconnect());
       }
       rethrow;
@@ -142,7 +143,7 @@ class BybitWebSocketClient {
   /// - 'wallet' - Wallet updates
   Future<void> subscribe(String topic) async {
     if (!_isConnected) {
-      print('WebSocket: Cannot subscribe to $topic - not connected');
+      Logger.warning('WebSocket: Cannot subscribe to $topic - not connected');
       throw Exception('WebSocket not connected. Call connect() first.');
     }
 
@@ -151,7 +152,7 @@ class BybitWebSocketClient {
       'args': [topic],
     };
 
-    print('WebSocket: Subscribing to $topic');
+    Logger.log('WebSocket: Subscribing to $topic');
     _channel?.sink.add(jsonEncode(subscribeMessage));
 
     // Track subscribed topics for reconnection
@@ -194,67 +195,67 @@ class BybitWebSocketClient {
   /// Handles incoming WebSocket messages
   void _onMessage(dynamic message) {
     try {
-      print('WebSocket: Received message: $message');
+      Logger.log('WebSocket: Received message: $message');
       final data = jsonDecode(message as String) as Map<String, dynamic>;
 
       // Handle pong response
       if (data['op'] == 'pong') {
         _lastPongReceivedTime = DateTime.now();
-        print('WebSocket: Pong received');
+        Logger.log('WebSocket: Pong received');
         return;
       }
 
       // Handle auth response
       if (data['op'] == 'auth') {
         if (data['success'] == true) {
-          print('WebSocket: Authentication successful');
+          Logger.log('WebSocket: Authentication successful');
         } else {
-          print('WebSocket: Authentication failed: ${data['ret_msg']}');
+          Logger.error('WebSocket: Authentication failed: ${data['ret_msg']}');
         }
         return;
       }
 
       // Handle subscription response
       if (data['op'] == 'subscribe') {
-        print('WebSocket: Subscription response: ${data['success']}');
+        Logger.log('WebSocket: Subscription response: ${data['success']}');
         return;
       }
 
       // Handle topic data
       if (data.containsKey('topic')) {
         final topic = data['topic'] as String;
-        print('WebSocket: Topic data received: $topic');
+        Logger.log('WebSocket: Topic data received: $topic');
 
         // Find matching controller (handle wildcard topics)
         for (final entry in _topicControllers.entries) {
           if (topic.startsWith(entry.key)) {
-            print('WebSocket: Adding data to stream controller');
+            Logger.log('WebSocket: Adding data to stream controller');
             entry.value.add(data);
             break;
           }
         }
       }
     } catch (e) {
-      print('WebSocket: Error parsing message: $e');
+      Logger.error('WebSocket: Error parsing message: $e');
     }
   }
 
   /// Handles WebSocket errors
   void _onError(error) {
-    print('WebSocket: Error: $error');
+    Logger.error('WebSocket: Error: $error');
     _isConnected = false;
     onConnectionStatusChanged?.call(false);
 
     // Auto-reconnect on error
     if (_shouldReconnect) {
-      print('WebSocket: Scheduling reconnection in 5 seconds...');
+      Logger.log('WebSocket: Scheduling reconnection in 5 seconds...');
       Future.delayed(const Duration(seconds: 5), () => _reconnect());
     }
   }
 
   /// Handles WebSocket close
   void _onDone() {
-    print('WebSocket: Connection closed');
+    Logger.log('WebSocket: Connection closed');
     final wasConnected = _isConnected;
     _isConnected = false;
     _stopPingTimer();
@@ -266,7 +267,7 @@ class BybitWebSocketClient {
 
     // Auto-reconnect on unexpected close
     if (_shouldReconnect) {
-      print('WebSocket: Scheduling reconnection in 5 seconds...');
+      Logger.log('WebSocket: Scheduling reconnection in 5 seconds...');
       Future.delayed(const Duration(seconds: 5), () => _reconnect());
     }
   }
@@ -279,7 +280,7 @@ class BybitWebSocketClient {
         _lastPingSentTime = DateTime.now();
         final pingMessage = {'op': 'ping'};
         _channel?.sink.add(jsonEncode(pingMessage));
-        print('WebSocket: Ping sent');
+        Logger.log('WebSocket: Ping sent');
 
         // Start pong timeout check (3 seconds)
         _startPongTimeoutTimer();
@@ -301,7 +302,7 @@ class BybitWebSocketClient {
       if (_lastPingSentTime != null &&
           (_lastPongReceivedTime == null ||
            _lastPongReceivedTime!.isBefore(_lastPingSentTime!))) {
-        print('WebSocket: Pong timeout - reconnecting...');
+        Logger.warning('WebSocket: Pong timeout - reconnecting...');
         _handlePongTimeout();
       }
     });
@@ -325,7 +326,7 @@ class BybitWebSocketClient {
 
     // Reconnect
     if (_shouldReconnect) {
-      print('WebSocket: Reconnecting due to pong timeout...');
+      Logger.log('WebSocket: Reconnecting due to pong timeout...');
       _reconnect();
     }
   }
@@ -336,12 +337,12 @@ class BybitWebSocketClient {
       return;
     }
 
-    print('WebSocket: Attempting to reconnect...');
+    Logger.log('WebSocket: Attempting to reconnect...');
 
     try {
       await connect();
     } catch (e) {
-      print('WebSocket: Reconnection failed: $e');
+      Logger.error('WebSocket: Reconnection failed: $e');
       // connect() already schedules another reconnection on error
     }
   }

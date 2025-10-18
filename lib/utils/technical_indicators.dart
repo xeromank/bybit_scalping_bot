@@ -6,6 +6,7 @@
 /// commonly used in trading strategies.
 
 import 'dart:math' as math;
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Trading strategy mode
 enum TradingMode {
@@ -644,7 +645,7 @@ TechnicalAnalysis analyzePriceData(
   TradingMode effectiveMode = mode;
   if (mode == TradingMode.auto) {
     effectiveMode = selectOptimalMode(closePrices);
-    print('Auto mode selected: ${effectiveMode == TradingMode.bollinger ? "Bollinger (Ranging Market)" : "EMA (Trending Market)"}');
+    Logger.info('Auto mode selected: ${effectiveMode == TradingMode.bollinger ? "Bollinger (Ranging Market)" : "EMA (Trending Market)"}');
   }
 
   // Common indicators for both modes

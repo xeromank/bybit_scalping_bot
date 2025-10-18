@@ -17,6 +17,7 @@ import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
 import 'package:bybit_scalping_bot/utils/signal_strength.dart';
 import 'package:bybit_scalping_bot/utils/notification_helper.dart';
 import 'package:bybit_scalping_bot/services/database_service.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Trading signal status
 enum TradingStatus {
@@ -116,12 +117,12 @@ class TradingProvider extends ChangeNotifier {
 
     if (_publicWsClient != null && _publicWsClient!.isConnected) {
       await _subscribeToKline();
-      print('TradingProvider: Initialized with default symbol: $_symbol');
+      Logger.log('TradingProvider: Initialized with default symbol: $_symbol');
     }
 
     // If bot is running (e.g., after hot reload), immediately check position
     if (_isRunning) {
-      print('TradingProvider: Bot is running after reload, checking position...');
+      Logger.log('TradingProvider: Bot is running after reload, checking position...');
       await _updatePositionStatus();
     }
 
@@ -131,7 +132,7 @@ class TradingProvider extends ChangeNotifier {
   /// Loads initial kline data from API to populate indicators immediately
   Future<void> _loadInitialKlineData() async {
     try {
-      print('TradingProvider: Loading initial kline data for $_symbol...');
+      Logger.log('TradingProvider: Loading initial kline data for $_symbol...');
 
       // Fetch 50 candles of 5-minute kline data
       final result = await _repository.apiClient.getKlines(
@@ -143,9 +144,9 @@ class TradingProvider extends ChangeNotifier {
       if (result['retCode'] == 0) {
         final list = result['result']['list'] as List<dynamic>;
 
-        print('TradingProvider: API response - ${list.length} candles received');
+        Logger.log('TradingProvider: API response - ${list.length} candles received');
         if (list.isNotEmpty) {
-          print('TradingProvider: First candle sample: ${list[0]}');
+          Logger.log('TradingProvider: First candle sample: ${list[0]}');
         }
 
         // Clear existing data
@@ -165,14 +166,14 @@ class TradingProvider extends ChangeNotifier {
           }
         }
 
-        print('TradingProvider: Parsed ${_realtimeClosePrices.length} valid candles');
+        Logger.log('TradingProvider: Parsed ${_realtimeClosePrices.length} valid candles');
 
         // Update current price from the latest candle
         if (_realtimeClosePrices.isNotEmpty) {
           _currentPrice = _realtimeClosePrices.last;
         }
 
-        print('TradingProvider: Loaded ${_realtimeClosePrices.length} candles from API');
+        Logger.log('TradingProvider: Loaded ${_realtimeClosePrices.length} candles from API');
 
         // Calculate indicators immediately if we have enough data
         if (_realtimeClosePrices.length >= 30) {
@@ -181,10 +182,10 @@ class TradingProvider extends ChangeNotifier {
 
         notifyListeners();
       } else {
-        print('TradingProvider: Failed to load initial kline data: ${result['retMsg']}');
+        Logger.error('TradingProvider: Failed to load initial kline data: ${result['retMsg']}');
       }
     } catch (e) {
-      print('TradingProvider: Error loading initial kline data: $e');
+      Logger.error('TradingProvider: Error loading initial kline data: $e');
     }
   }
 
@@ -241,9 +242,9 @@ class TradingProvider extends ChangeNotifier {
 
         try {
           await _publicWsClient!.unsubscribe('kline.${AppConstants.defaultMainInterval}.$oldSymbol');
-          print('TradingProvider: Unsubscribed from kline.${AppConstants.defaultMainInterval}.$oldSymbol');
+          Logger.log('TradingProvider: Unsubscribed from kline.${AppConstants.defaultMainInterval}.$oldSymbol');
         } catch (e) {
-          print('TradingProvider: Error unsubscribing from old symbol: $e');
+          Logger.error('TradingProvider: Error unsubscribing from old symbol: $e');
         }
 
         // Load initial kline data for new symbol from API
@@ -555,13 +556,13 @@ class TradingProvider extends ChangeNotifier {
             _realtimeVolumes.removeAt(0);
           }
 
-          print('TradingProvider: ✅ CONFIRMED candle added - close: $closePrice, volume: ${volume.toStringAsFixed(2)}, total candles: ${_realtimeClosePrices.length}');
+          Logger.success('TradingProvider: CONFIRMED candle added - close: $closePrice, volume: ${volume.toStringAsFixed(2)}, total candles: ${_realtimeClosePrices.length}');
         } else {
           // Unconfirmed candle - update the last candle in real-time
           if (_realtimeClosePrices.isNotEmpty) {
             _realtimeClosePrices[_realtimeClosePrices.length - 1] = closePrice;
             _realtimeVolumes[_realtimeVolumes.length - 1] = volume;
-            print('TradingProvider: 🔄 UPDATING last candle - close: $closePrice, volume: ${volume.toStringAsFixed(2)}');
+            Logger.log('TradingProvider: 🔄 UPDATING last candle - close: $closePrice, volume: ${volume.toStringAsFixed(2)}');
           }
         }
 
@@ -569,11 +570,11 @@ class TradingProvider extends ChangeNotifier {
         if (_realtimeClosePrices.length >= 30) {
           _calculateRealtimeIndicators();
         } else {
-          print('TradingProvider: ⚠️ Not enough data yet (${_realtimeClosePrices.length}/30 candles) - skipping indicator calculation');
+          Logger.warning('TradingProvider: Not enough data yet (${_realtimeClosePrices.length}/30 candles) - skipping indicator calculation');
         }
       }
     } catch (e) {
-      print('TradingProvider: Error handling kline update: $e');
+      Logger.error('TradingProvider: Error handling kline update: $e');
     }
   }
 
@@ -623,7 +624,7 @@ class TradingProvider extends ChangeNotifier {
           );
         }
 
-        print('TradingProvider: 📊 Signal: ${isLong ? "LONG" : "SHORT"} | ${_currentSignalStrength?.toString() ?? "N/A"}');
+        Logger.log('TradingProvider: 📊 Signal: ${isLong ? "LONG" : "SHORT"} | ${_currentSignalStrength?.toString() ?? "N/A"}');
       } else {
         _currentSignalStrength = null;
       }
@@ -636,7 +637,7 @@ class TradingProvider extends ChangeNotifier {
         _findEntrySignal();
       }
     } catch (e) {
-      print('TradingProvider: ❌ Error calculating realtime indicators: $e');
+      Logger.error('TradingProvider: Error calculating realtime indicators: $e');
     }
   }
 
@@ -947,7 +948,7 @@ class TradingProvider extends ChangeNotifier {
           }
         }
       } catch (e) {
-        print('TradingProvider: Failed to parse instrument info, using defaults: $e');
+        Logger.warning('TradingProvider: Failed to parse instrument info, using defaults: $e');
       }
 
       // Calculate qty from USDT amount and current price
@@ -1125,10 +1126,10 @@ class TradingProvider extends ChangeNotifier {
         );
       }).toList();
 
-      print('TradingProvider: Loaded ${_logs.length} logs from database');
+      Logger.log('TradingProvider: Loaded ${_logs.length} logs from database');
       notifyListeners();
     } catch (e) {
-      print('TradingProvider: Error loading logs from database: $e');
+      Logger.error('TradingProvider: Error loading logs from database: $e');
     }
   }
 

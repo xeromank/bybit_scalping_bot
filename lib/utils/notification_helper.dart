@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:vibration/vibration.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Helper class for haptic feedback and notifications
 class NotificationHelper {
@@ -17,7 +18,7 @@ class NotificationHelper {
       // Haptic feedback (works on iOS and some Android devices)
       await HapticFeedback.heavyImpact();
     } catch (e) {
-      print('NotificationHelper: Error triggering notification: $e');
+      Logger.error('NotificationHelper: Error triggering notification: $e');
     }
   }
 
@@ -35,7 +36,7 @@ class NotificationHelper {
       // Haptic feedback
       await HapticFeedback.mediumImpact();
     } catch (e) {
-      print('NotificationHelper: Error triggering notification: $e');
+      Logger.error('NotificationHelper: Error triggering notification: $e');
     }
   }
 
@@ -45,7 +46,7 @@ class NotificationHelper {
       // Light haptic feedback only (no vibration for ready state)
       await HapticFeedback.lightImpact();
     } catch (e) {
-      print('NotificationHelper: Error triggering notification: $e');
+      Logger.error('NotificationHelper: Error triggering notification: $e');
     }
   }
 }

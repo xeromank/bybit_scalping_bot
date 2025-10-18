@@ -13,6 +13,7 @@ import 'package:bybit_scalping_bot/screens/login_screen_new.dart';
 import 'package:bybit_scalping_bot/screens/trading_screen_new.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/constants/app_constants.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Main entry point for the refactored application
 ///
@@ -42,6 +43,10 @@ class MyApp extends StatelessWidget {
       storageService: secureStorageService,
     );
 
+    // Shared WebSocket clients (created once per authentication session)
+    BybitWebSocketClient? sharedWsClient;
+    BybitPublicWebSocketClient? sharedPublicWsClient;
+
     return MultiProvider(
       providers: [
         // Auth Provider (manages authentication state)
@@ -70,37 +75,52 @@ class MyApp extends StatelessWidget {
               );
               final repository = BybitRepository(apiClient: apiClient);
 
-              // Create WebSocket client for real-time position updates
-              final wsClient = BybitWebSocketClient(
+              // Reuse or create WebSocket clients
+              sharedWsClient ??= BybitWebSocketClient(
                 apiKey: authProvider.credentials!.apiKey,
                 apiSecret: authProvider.credentials!.apiSecret,
                 isTestnet: false,
               );
 
-              // Create public WebSocket client for real-time ticker/kline data
-              final publicWsClient = BybitPublicWebSocketClient(
+              sharedPublicWsClient ??= BybitPublicWebSocketClient(
                 isTestnet: false,
               );
 
               final provider = BalanceProvider(
                 repository: repository,
-                wsClient: wsClient,
-                publicWsClient: publicWsClient,
+                wsClient: sharedWsClient!,
+                publicWsClient: sharedPublicWsClient!,
               );
 
-              // Connect both WebSocket clients asynchronously
-              Future.wait([
-                wsClient.connect(),
-                publicWsClient.connect(),
-              ]).then((_) {
-                // WebSocket connected, fetch balance again to subscribe to positions
+              // Connect both WebSocket clients asynchronously (only if not already connected)
+              final futures = <Future>[];
+              if (!sharedWsClient!.isConnected) {
+                futures.add(sharedWsClient!.connect());
+              }
+              if (!sharedPublicWsClient!.isConnected) {
+                futures.add(sharedPublicWsClient!.connect());
+              }
+
+              if (futures.isNotEmpty) {
+                Future.wait(futures).then((_) {
+                  // WebSocket connected, fetch balance again to subscribe to positions
+                  provider.fetchBalance();
+                }).catchError((error) {
+                  // Handle connection error silently - will fallback to API
+                  Logger.error('WebSocket connection failed: $error');
+                });
+              } else {
+                // Already connected, just fetch balance
                 provider.fetchBalance();
-              }).catchError((error) {
-                // Handle connection error silently - will fallback to API
-                print('WebSocket connection failed: $error');
-              });
+              }
 
               return provider;
+            } else {
+              // Disconnect and clear WebSocket clients when logged out
+              sharedWsClient?.disconnect();
+              sharedPublicWsClient?.disconnect();
+              sharedWsClient = null;
+              sharedPublicWsClient = null;
             }
             return null;
           },
@@ -118,29 +138,34 @@ class MyApp extends StatelessWidget {
               );
               final repository = BybitRepository(apiClient: apiClient);
 
-              // Create trading provider first
-              TradingProvider? tradingProvider;
-
-              // Create public WebSocket client for real-time kline data with connection status callback
-              final publicWsClient = BybitPublicWebSocketClient(
+              // Reuse shared public WebSocket client
+              sharedPublicWsClient ??= BybitPublicWebSocketClient(
                 isTestnet: false,
-                onConnectionStatusChanged: (isConnected) {
-                  tradingProvider?.handleWebSocketStatusChange(isConnected);
-                },
               );
 
-              tradingProvider = TradingProvider(
+              // Create trading provider with connection status callback
+              final tradingProvider = TradingProvider(
                 repository: repository,
-                publicWsClient: publicWsClient,
+                publicWsClient: sharedPublicWsClient!,
               );
 
-              // Connect public WebSocket and initialize
-              publicWsClient.connect().then((_) {
-                // WebSocket connected, subscribe to default symbol
-                tradingProvider?.initialize();
-              }).catchError((error) {
-                print('Public WebSocket connection failed for TradingProvider: $error');
-              });
+              // Set connection status callback
+              sharedPublicWsClient!.onConnectionStatusChanged = (isConnected) {
+                tradingProvider.handleWebSocketStatusChange(isConnected);
+              };
+
+              // Connect public WebSocket and initialize (only if not already connected)
+              if (!sharedPublicWsClient!.isConnected) {
+                sharedPublicWsClient!.connect().then((_) {
+                  // WebSocket connected, subscribe to default symbol
+                  tradingProvider.initialize();
+                }).catchError((error) {
+                  Logger.error('Public WebSocket connection failed for TradingProvider: $error');
+                });
+              } else {
+                // Already connected, just initialize
+                tradingProvider.initialize();
+              }
 
               return tradingProvider;
             }

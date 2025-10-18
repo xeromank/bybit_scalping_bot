@@ -239,149 +239,182 @@ class _TradingControlsState extends State<TradingControls> {
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // Row 3: Profit Target and Stop Loss
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _profitController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: '익절 ROE (%)',
-                        prefixIcon: Icons.trending_up,
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
-                      ],
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final profit = double.tryParse(value);
-                        if (profit != null) {
-                          provider.setProfitTargetPercent(profit);
-                        }
-                      },
-                    ),
+              // TP/SL Settings (Collapsible)
+              ExpansionTile(
+                title: const Text(
+                  'TP/SL 설정',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
                   ),
-                  const SizedBox(width: ThemeConstants.spacingSmall),
-                  Expanded(
-                    child: TextField(
-                      controller: _stopLossController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: '손절 ROE (%)',
-                        prefixIcon: Icons.trending_down,
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                ),
+                initiallyExpanded: true,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _profitController,
+                            decoration: ThemeConstants.inputDecoration(
+                              labelText: '익절 ROE (%)',
+                              prefixIcon: Icons.trending_up,
+                            ),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                            ],
+                            enabled: !isRunning,
+                            onChanged: (value) {
+                              final profit = double.tryParse(value);
+                              if (profit != null) {
+                                provider.setProfitTargetPercent(profit);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: ThemeConstants.spacingSmall),
+                        Expanded(
+                          child: TextField(
+                            controller: _stopLossController,
+                            decoration: ThemeConstants.inputDecoration(
+                              labelText: '손절 ROE (%)',
+                              prefixIcon: Icons.trending_down,
+                            ),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                            ],
+                            enabled: !isRunning,
+                            onChanged: (value) {
+                              final stopLoss = double.tryParse(value);
+                              if (stopLoss != null) {
+                                provider.setStopLossPercent(stopLoss);
+                              }
+                            },
+                          ),
+                        ),
                       ],
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final stopLoss = double.tryParse(value);
-                        if (stopLoss != null) {
-                          provider.setStopLossPercent(stopLoss);
-                        }
-                      },
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // Row 4: RSI(6) Thresholds
-              Row(
+              // Advanced Settings (RSI) - Collapsible
+              ExpansionTile(
+                title: const Text(
+                  '고급 설정 (RSI)',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                initiallyExpanded: false,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _rsi6LongController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: 'RSI(6) 롱',
-                        prefixIcon: Icons.arrow_upward,
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
-                      ],
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final threshold = double.tryParse(value);
-                        if (threshold != null) {
-                          provider.setRsi6LongThreshold(threshold);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: ThemeConstants.spacingSmall),
-                  Expanded(
-                    child: TextField(
-                      controller: _rsi6ShortController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: 'RSI(6) 숏',
-                        prefixIcon: Icons.arrow_downward,
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
-                      ],
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final threshold = double.tryParse(value);
-                        if (threshold != null) {
-                          provider.setRsi6ShortThreshold(threshold);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: ThemeConstants.spacingSmall),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Column(
+                      children: [
+                        // RSI(6) Thresholds
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _rsi6LongController,
+                                decoration: ThemeConstants.inputDecoration(
+                                  labelText: 'RSI(6) 롱',
+                                  prefixIcon: Icons.arrow_upward,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                                ],
+                                enabled: !isRunning,
+                                onChanged: (value) {
+                                  final threshold = double.tryParse(value);
+                                  if (threshold != null) {
+                                    provider.setRsi6LongThreshold(threshold);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: ThemeConstants.spacingSmall),
+                            Expanded(
+                              child: TextField(
+                                controller: _rsi6ShortController,
+                                decoration: ThemeConstants.inputDecoration(
+                                  labelText: 'RSI(6) 숏',
+                                  prefixIcon: Icons.arrow_downward,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                                ],
+                                enabled: !isRunning,
+                                onChanged: (value) {
+                                  final threshold = double.tryParse(value);
+                                  if (threshold != null) {
+                                    provider.setRsi6ShortThreshold(threshold);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // Row 5: RSI(14) Thresholds
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _rsi14LongController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: 'RSI(14) 롱',
-                        prefixIcon: Icons.arrow_upward,
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                        // RSI(14) Thresholds
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _rsi14LongController,
+                                decoration: ThemeConstants.inputDecoration(
+                                  labelText: 'RSI(14) 롱',
+                                  prefixIcon: Icons.arrow_upward,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                                ],
+                                enabled: !isRunning,
+                                onChanged: (value) {
+                                  final threshold = double.tryParse(value);
+                                  if (threshold != null) {
+                                    provider.setRsi14LongThreshold(threshold);
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: ThemeConstants.spacingSmall),
+                            Expanded(
+                              child: TextField(
+                                controller: _rsi14ShortController,
+                                decoration: ThemeConstants.inputDecoration(
+                                  labelText: 'RSI(14) 숏',
+                                  prefixIcon: Icons.arrow_downward,
+                                ),
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                                ],
+                                enabled: !isRunning,
+                                onChanged: (value) {
+                                  final threshold = double.tryParse(value);
+                                  if (threshold != null) {
+                                    provider.setRsi14ShortThreshold(threshold);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final threshold = double.tryParse(value);
-                        if (threshold != null) {
-                          provider.setRsi14LongThreshold(threshold);
-                        }
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: ThemeConstants.spacingSmall),
-                  Expanded(
-                    child: TextField(
-                      controller: _rsi14ShortController,
-                      decoration: ThemeConstants.inputDecoration(
-                        labelText: 'RSI(14) 숏',
-                        prefixIcon: Icons.arrow_downward,
-                      ),
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
-                      ],
-                      enabled: !isRunning,
-                      onChanged: (value) {
-                        final threshold = double.tryParse(value);
-                        if (threshold != null) {
-                          provider.setRsi14ShortThreshold(threshold);
-                        }
-                      },
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: ThemeConstants.spacingSmall),
 
               // Current Price Display
               if (provider.currentPrice != null) ...[

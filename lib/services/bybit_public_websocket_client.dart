@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// WebSocket client for Bybit public channels (ticker, kline, orderbook, etc.)
 ///
@@ -13,7 +14,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// - Trades
 class BybitPublicWebSocketClient {
   final bool isTestnet;
-  final Function(bool isConnected)? onConnectionStatusChanged;
+  Function(bool isConnected)? onConnectionStatusChanged; // Mutable to allow setting after creation
 
   WebSocketChannel? _channel;
   Timer? _pingTimer;
@@ -45,13 +46,13 @@ class BybitPublicWebSocketClient {
   /// Connects to WebSocket (no authentication needed for public channels)
   Future<void> connect() async {
     if (_isConnected || _isConnecting) {
-      print('PublicWebSocket: Already connected or connecting');
+      Logger.log('PublicWebSocket: Already connected or connecting');
       return;
     }
 
     _isConnecting = true;
     _shouldReconnect = true;
-    print('PublicWebSocket: Connecting to $_wsUrl');
+    Logger.log('PublicWebSocket: Connecting to $_wsUrl');
 
     try {
       // Create WebSocket connection
@@ -71,7 +72,7 @@ class BybitPublicWebSocketClient {
       _isConnected = true;
       _isConnecting = false;
 
-      print('PublicWebSocket: Connected');
+      Logger.log('PublicWebSocket: Connected');
       onConnectionStatusChanged?.call(true);
 
       // Start ping timer (send ping every 20 seconds)
@@ -79,20 +80,20 @@ class BybitPublicWebSocketClient {
 
       // Resubscribe to previous topics
       if (_subscribedTopics.isNotEmpty) {
-        print('PublicWebSocket: Resubscribing to ${_subscribedTopics.length} topics');
+        Logger.log('PublicWebSocket: Resubscribing to ${_subscribedTopics.length} topics');
         for (final topic in _subscribedTopics) {
           await subscribe(topic);
         }
       }
     } catch (e) {
-      print('PublicWebSocket: Connection error: $e');
+      Logger.error('PublicWebSocket: Connection error: $e');
       _isConnecting = false;
       _isConnected = false;
       onConnectionStatusChanged?.call(false);
 
       // Auto-reconnect after error
       if (_shouldReconnect) {
-        print('PublicWebSocket: Scheduling reconnection in 5 seconds...');
+        Logger.log('PublicWebSocket: Scheduling reconnection in 5 seconds...');
         Future.delayed(const Duration(seconds: 5), () => _reconnect());
       }
       rethrow;
@@ -108,7 +109,7 @@ class BybitPublicWebSocketClient {
   /// - 'publicTrade.BTCUSDT' - Public trades
   Future<void> subscribe(String topic) async {
     if (!_isConnected) {
-      print('PublicWebSocket: Cannot subscribe to $topic - not connected');
+      Logger.error('PublicWebSocket: Cannot subscribe to $topic - not connected');
       throw Exception('WebSocket not connected. Call connect() first.');
     }
 
@@ -117,7 +118,7 @@ class BybitPublicWebSocketClient {
       'args': [topic],
     };
 
-    print('PublicWebSocket: Subscribing to $topic');
+    Logger.log('PublicWebSocket: Subscribing to $topic');
     _channel?.sink.add(jsonEncode(subscribeMessage));
 
     // Track subscribed topics for reconnection
@@ -162,16 +163,23 @@ class BybitPublicWebSocketClient {
     try {
       final data = jsonDecode(message as String) as Map<String, dynamic>;
 
-      // Handle pong response
+      // Handle pong response (Public WebSocket format: {"op":"ping", "ret_msg":"pong"})
+      if (data['op'] == 'ping' && data['ret_msg'] == 'pong') {
+        _lastPongReceivedTime = DateTime.now();
+        Logger.log('PublicWebSocket: Pong received');
+        return;
+      }
+
+      // Also handle standard pong format (for compatibility)
       if (data['op'] == 'pong') {
         _lastPongReceivedTime = DateTime.now();
-        print('PublicWebSocket: Pong received');
+        Logger.log('PublicWebSocket: Pong received (standard format)');
         return;
       }
 
       // Handle subscription response
       if (data['op'] == 'subscribe') {
-        print('PublicWebSocket: Subscription response: ${data['success']}');
+        Logger.log('PublicWebSocket: Subscription response: ${data['success']}');
         return;
       }
 
@@ -189,7 +197,7 @@ class BybitPublicWebSocketClient {
         }
       }
     } catch (e) {
-      print('PublicWebSocket: Error parsing message: $e');
+      Logger.error('PublicWebSocket: Error parsing message: $e');
     }
   }
 
@@ -206,20 +214,20 @@ class BybitPublicWebSocketClient {
 
   /// Handles WebSocket errors
   void _onError(error) {
-    print('PublicWebSocket: Error: $error');
+    Logger.error('PublicWebSocket: Error: $error');
     _isConnected = false;
     onConnectionStatusChanged?.call(false);
 
     // Auto-reconnect on error
     if (_shouldReconnect) {
-      print('PublicWebSocket: Scheduling reconnection in 5 seconds...');
+      Logger.log('PublicWebSocket: Scheduling reconnection in 5 seconds...');
       Future.delayed(const Duration(seconds: 5), () => _reconnect());
     }
   }
 
   /// Handles WebSocket close
   void _onDone() {
-    print('PublicWebSocket: Connection closed');
+    Logger.log('PublicWebSocket: Connection closed');
     final wasConnected = _isConnected;
     _isConnected = false;
     _stopPingTimer();
@@ -231,7 +239,7 @@ class BybitPublicWebSocketClient {
 
     // Auto-reconnect on unexpected close
     if (_shouldReconnect) {
-      print('PublicWebSocket: Scheduling reconnection in 5 seconds...');
+      Logger.log('PublicWebSocket: Scheduling reconnection in 5 seconds...');
       Future.delayed(const Duration(seconds: 5), () => _reconnect());
     }
   }
@@ -242,11 +250,15 @@ class BybitPublicWebSocketClient {
     _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (_isConnected) {
         _lastPingSentTime = DateTime.now();
-        final pingMessage = {'op': 'ping'};
+        // Public WebSocket requires req_id in ping message
+        final pingMessage = {
+          'req_id': DateTime.now().millisecondsSinceEpoch.toString(),
+          'op': 'ping',
+        };
         _channel?.sink.add(jsonEncode(pingMessage));
-        print('PublicWebSocket: Ping sent');
+        Logger.log('PublicWebSocket: Ping sent');
 
-        // Start pong timeout check (3 seconds)
+        // Start pong timeout check (10 seconds)
         _startPongTimeoutTimer();
       }
     });
@@ -261,12 +273,12 @@ class BybitPublicWebSocketClient {
   /// Starts pong timeout timer (10 seconds)
   void _startPongTimeoutTimer() {
     _stopPongTimeoutTimer();
-    _pongTimeoutTimer = Timer(const Duration(seconds: 10), () {
+    _pongTimeoutTimer = Timer(const Duration(seconds: 30), () {
       // Check if pong was received
       if (_lastPingSentTime != null &&
           (_lastPongReceivedTime == null ||
            _lastPongReceivedTime!.isBefore(_lastPingSentTime!))) {
-        print('PublicWebSocket: Pong timeout - reconnecting...');
+        Logger.warning('PublicWebSocket: Pong timeout - reconnecting...');
         _handlePongTimeout();
       }
     });
@@ -290,7 +302,7 @@ class BybitPublicWebSocketClient {
 
     // Reconnect
     if (_shouldReconnect) {
-      print('PublicWebSocket: Reconnecting due to pong timeout...');
+      Logger.log('PublicWebSocket: Reconnecting due to pong timeout...');
       _reconnect();
     }
   }
@@ -301,12 +313,12 @@ class BybitPublicWebSocketClient {
       return;
     }
 
-    print('PublicWebSocket: Attempting to reconnect...');
+    Logger.log('PublicWebSocket: Attempting to reconnect...');
 
     try {
       await connect();
     } catch (e) {
-      print('PublicWebSocket: Reconnection failed: $e');
+      Logger.error('PublicWebSocket: Reconnection failed: $e');
       // connect() already schedules another reconnection on error
     }
   }
