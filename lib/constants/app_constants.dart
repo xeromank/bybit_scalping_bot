@@ -12,7 +12,7 @@ class AppConstants {
 
   // Default Trading Settings
   static const String defaultSymbol = 'ETHUSDT';
-  static const double defaultOrderAmount = 50.0;
+  static const double defaultOrderAmount = 100.0;
   static const String defaultLeverage = '10'; // Changed to 10x for both strategies
 
   // ===== BOLLINGER BAND MODE SETTINGS =====
