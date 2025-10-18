@@ -293,10 +293,10 @@ class BybitWebSocketClient {
     _pingTimer = null;
   }
 
-  /// Starts pong timeout timer (3 seconds)
+  /// Starts pong timeout timer (10 seconds)
   void _startPongTimeoutTimer() {
     _stopPongTimeoutTimer();
-    _pongTimeoutTimer = Timer(const Duration(seconds: 3), () {
+    _pongTimeoutTimer = Timer(const Duration(seconds: 10), () {
       // Check if pong was received
       if (_lastPingSentTime != null &&
           (_lastPongReceivedTime == null ||
