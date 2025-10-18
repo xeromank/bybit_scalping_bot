@@ -81,12 +81,30 @@ class TradingProvider extends ChangeNotifier {
   TradingStatus _tradingStatus = TradingStatus.noSignal; // Current trading status
   DateTime? _lastStatusUpdate; // Last status update time
   DateTime? _lastDataUpdate; // Last data update time (WebSocket)
+  bool _isWebSocketConnected = false; // WebSocket connection status
 
   TradingProvider({
     required BybitRepository repository,
     BybitPublicWebSocketClient? publicWsClient,
   })  : _repository = repository,
-        _publicWsClient = publicWsClient;
+        _publicWsClient = publicWsClient {
+    // Initialize WebSocket connection status
+    _isWebSocketConnected = _publicWsClient?.isConnected ?? false;
+  }
+
+  /// Handles WebSocket connection status changes
+  void handleWebSocketStatusChange(bool isConnected) {
+    if (_isWebSocketConnected != isConnected) {
+      _isWebSocketConnected = isConnected;
+      notifyListeners();
+
+      if (isConnected) {
+        _addLog(TradeLog.info('WebSocket connected'));
+      } else {
+        _addLog(TradeLog.warning('WebSocket disconnected'));
+      }
+    }
+  }
 
   /// Initializes the provider by subscribing to default symbol's kline
   Future<void> initialize() async {
@@ -186,6 +204,7 @@ class TradingProvider extends ChangeNotifier {
   TradingStatus get tradingStatus => _tradingStatus;
   DateTime? get lastStatusUpdate => _lastStatusUpdate;
   DateTime? get lastDataUpdate => _lastDataUpdate;
+  bool get isWebSocketConnected => _isWebSocketConnected;
 
   // Trading Mode Getters
   TradingMode get tradingMode => _tradingMode;

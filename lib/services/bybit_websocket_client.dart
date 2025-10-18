@@ -17,17 +17,24 @@ class BybitWebSocketClient {
   final String apiKey;
   final String apiSecret;
   final bool isTestnet;
+  final Function(bool isConnected)? onConnectionStatusChanged;
 
   WebSocketChannel? _channel;
   Timer? _pingTimer;
+  Timer? _pongTimeoutTimer;
   final Map<String, StreamController<Map<String, dynamic>>> _topicControllers = {};
   bool _isConnected = false;
   bool _isConnecting = false;
+  bool _shouldReconnect = true;
+  DateTime? _lastPingSentTime;
+  DateTime? _lastPongReceivedTime;
+  List<String> _subscribedTopics = [];
 
   BybitWebSocketClient({
     required this.apiKey,
     required this.apiSecret,
     this.isTestnet = false,
+    this.onConnectionStatusChanged,
   });
 
   /// WebSocket URL for private channels
@@ -49,6 +56,7 @@ class BybitWebSocketClient {
     }
 
     _isConnecting = true;
+    _shouldReconnect = true;
     print('WebSocket: Connecting to $_wsUrl');
 
     try {
@@ -73,13 +81,29 @@ class BybitWebSocketClient {
       _isConnecting = false;
 
       print('WebSocket: Connected and authenticated');
+      onConnectionStatusChanged?.call(true);
 
       // Start ping timer (send ping every 20 seconds)
       _startPingTimer();
+
+      // Resubscribe to previous topics
+      if (_subscribedTopics.isNotEmpty) {
+        print('WebSocket: Resubscribing to ${_subscribedTopics.length} topics');
+        for (final topic in _subscribedTopics) {
+          await subscribe(topic);
+        }
+      }
     } catch (e) {
       print('WebSocket: Connection error: $e');
       _isConnecting = false;
       _isConnected = false;
+      onConnectionStatusChanged?.call(false);
+
+      // Auto-reconnect after error
+      if (_shouldReconnect) {
+        print('WebSocket: Scheduling reconnection in 5 seconds...');
+        Future.delayed(const Duration(seconds: 5), () => _reconnect());
+      }
       rethrow;
     }
   }
@@ -130,6 +154,11 @@ class BybitWebSocketClient {
     print('WebSocket: Subscribing to $topic');
     _channel?.sink.add(jsonEncode(subscribeMessage));
 
+    // Track subscribed topics for reconnection
+    if (!_subscribedTopics.contains(topic)) {
+      _subscribedTopics.add(topic);
+    }
+
     // Create stream controller for this topic if not exists
     if (!_topicControllers.containsKey(topic)) {
       _topicControllers[topic] = StreamController<Map<String, dynamic>>.broadcast();
@@ -149,6 +178,9 @@ class BybitWebSocketClient {
 
     _channel?.sink.add(jsonEncode(unsubscribeMessage));
 
+    // Remove from tracked topics
+    _subscribedTopics.remove(topic);
+
     // Close and remove stream controller
     await _topicControllers[topic]?.close();
     _topicControllers.remove(topic);
@@ -167,6 +199,7 @@ class BybitWebSocketClient {
 
       // Handle pong response
       if (data['op'] == 'pong') {
+        _lastPongReceivedTime = DateTime.now();
         print('WebSocket: Pong received');
         return;
       }
@@ -208,13 +241,34 @@ class BybitWebSocketClient {
 
   /// Handles WebSocket errors
   void _onError(error) {
+    print('WebSocket: Error: $error');
     _isConnected = false;
+    onConnectionStatusChanged?.call(false);
+
+    // Auto-reconnect on error
+    if (_shouldReconnect) {
+      print('WebSocket: Scheduling reconnection in 5 seconds...');
+      Future.delayed(const Duration(seconds: 5), () => _reconnect());
+    }
   }
 
   /// Handles WebSocket close
   void _onDone() {
+    print('WebSocket: Connection closed');
+    final wasConnected = _isConnected;
     _isConnected = false;
     _stopPingTimer();
+    _stopPongTimeoutTimer();
+
+    if (wasConnected) {
+      onConnectionStatusChanged?.call(false);
+    }
+
+    // Auto-reconnect on unexpected close
+    if (_shouldReconnect) {
+      print('WebSocket: Scheduling reconnection in 5 seconds...');
+      Future.delayed(const Duration(seconds: 5), () => _reconnect());
+    }
   }
 
   /// Starts ping timer to keep connection alive
@@ -222,8 +276,13 @@ class BybitWebSocketClient {
     _stopPingTimer();
     _pingTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       if (_isConnected) {
+        _lastPingSentTime = DateTime.now();
         final pingMessage = {'op': 'ping'};
         _channel?.sink.add(jsonEncode(pingMessage));
+        print('WebSocket: Ping sent');
+
+        // Start pong timeout check (3 seconds)
+        _startPongTimeoutTimer();
       }
     });
   }
@@ -234,20 +293,77 @@ class BybitWebSocketClient {
     _pingTimer = null;
   }
 
+  /// Starts pong timeout timer (3 seconds)
+  void _startPongTimeoutTimer() {
+    _stopPongTimeoutTimer();
+    _pongTimeoutTimer = Timer(const Duration(seconds: 3), () {
+      // Check if pong was received
+      if (_lastPingSentTime != null &&
+          (_lastPongReceivedTime == null ||
+           _lastPongReceivedTime!.isBefore(_lastPingSentTime!))) {
+        print('WebSocket: Pong timeout - reconnecting...');
+        _handlePongTimeout();
+      }
+    });
+  }
+
+  /// Stops pong timeout timer
+  void _stopPongTimeoutTimer() {
+    _pongTimeoutTimer?.cancel();
+    _pongTimeoutTimer = null;
+  }
+
+  /// Handles pong timeout - triggers reconnection
+  void _handlePongTimeout() {
+    _isConnected = false;
+    _stopPingTimer();
+    _stopPongTimeoutTimer();
+    onConnectionStatusChanged?.call(false);
+
+    // Close current connection
+    _channel?.sink.close();
+
+    // Reconnect
+    if (_shouldReconnect) {
+      print('WebSocket: Reconnecting due to pong timeout...');
+      _reconnect();
+    }
+  }
+
+  /// Reconnects to WebSocket
+  Future<void> _reconnect() async {
+    if (_isConnecting || _isConnected) {
+      return;
+    }
+
+    print('WebSocket: Attempting to reconnect...');
+
+    try {
+      await connect();
+    } catch (e) {
+      print('WebSocket: Reconnection failed: $e');
+      // connect() already schedules another reconnection on error
+    }
+  }
+
   /// Disconnects WebSocket
   Future<void> disconnect() async {
+    _shouldReconnect = false; // Prevent auto-reconnect
     _stopPingTimer();
+    _stopPongTimeoutTimer();
 
     // Close all stream controllers
     for (final controller in _topicControllers.values) {
       await controller.close();
     }
     _topicControllers.clear();
+    _subscribedTopics.clear();
 
     await _channel?.sink.close();
     _channel = null;
     _isConnected = false;
     _isConnecting = false;
+    onConnectionStatusChanged?.call(false);
   }
 
   /// Disposes resources

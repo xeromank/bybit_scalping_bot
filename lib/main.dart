@@ -118,12 +118,18 @@ class MyApp extends StatelessWidget {
               );
               final repository = BybitRepository(apiClient: apiClient);
 
-              // Create public WebSocket client for real-time kline data
+              // Create trading provider first
+              TradingProvider? tradingProvider;
+
+              // Create public WebSocket client for real-time kline data with connection status callback
               final publicWsClient = BybitPublicWebSocketClient(
                 isTestnet: false,
+                onConnectionStatusChanged: (isConnected) {
+                  tradingProvider?.handleWebSocketStatusChange(isConnected);
+                },
               );
 
-              final tradingProvider = TradingProvider(
+              tradingProvider = TradingProvider(
                 repository: repository,
                 publicWsClient: publicWsClient,
               );
@@ -131,7 +137,7 @@ class MyApp extends StatelessWidget {
               // Connect public WebSocket and initialize
               publicWsClient.connect().then((_) {
                 // WebSocket connected, subscribe to default symbol
-                tradingProvider.initialize();
+                tradingProvider?.initialize();
               }).catchError((error) {
                 print('Public WebSocket connection failed for TradingProvider: $error');
               });

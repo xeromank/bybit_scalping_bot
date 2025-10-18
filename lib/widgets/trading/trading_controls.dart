@@ -542,9 +542,21 @@ class _TradingControlsState extends State<TradingControls> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            // Status
+                            // Status with WebSocket connection indicator
                             Row(
                               children: [
+                                // WebSocket connection indicator
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: provider.isWebSocketConnected
+                                        ? ThemeConstants.successColor
+                                        : ThemeConstants.errorColor,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
                                 Icon(
                                   _getStatusIcon(provider.tradingStatus),
                                   size: 16,
