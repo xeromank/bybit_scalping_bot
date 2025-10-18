@@ -223,6 +223,27 @@ class DatabaseService {
     );
   }
 
+  /// Deletes all trade logs
+  Future<int> deleteAllTradeLogs() async {
+    final db = await database;
+    return await db.delete('trade_logs');
+  }
+
+  /// Deletes all order history
+  Future<int> deleteAllOrderHistory() async {
+    final db = await database;
+    return await db.delete('order_history');
+  }
+
+  /// Deletes all data (trade logs and order history)
+  Future<void> clearAllData() async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('trade_logs');
+      await txn.delete('order_history');
+    });
+  }
+
   /// Closes the database
   Future<void> close() async {
     final db = await database;

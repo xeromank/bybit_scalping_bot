@@ -601,6 +601,20 @@ class _TradingControlsState extends State<TradingControls> {
                       text: '봇 시작',
                       onPressed: () => _startBot(provider),
                     ),
+
+              // Clear Data Button (only visible when bot is stopped)
+              if (!isRunning) ...[
+                const SizedBox(height: ThemeConstants.spacingSmall),
+                OutlinedButton(
+                  onPressed: () => _clearAllData(provider),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: ThemeConstants.warningColor,
+                    side: const BorderSide(color: ThemeConstants.warningColor),
+                    minimumSize: const Size(double.infinity, 48),
+                  ),
+                  child: const Text('데이터 초기화 (로그 & DB)'),
+                ),
+              ],
             ],
           ),
         );
@@ -719,6 +733,57 @@ class _TradingControlsState extends State<TradingControls> {
     result.when(
       success: (data) {
         // Success handled by provider
+      },
+      failure: (message, exception) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: ThemeConstants.errorColor,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _clearAllData(TradingProvider provider) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('데이터 초기화'),
+        content: const Text(
+          '모든 거래 로그와 주문 히스토리가 삭제됩니다.\n정말 초기화하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: ThemeConstants.errorColor,
+            ),
+            child: const Text('초기화'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final result = await provider.clearAllData();
+
+    if (!mounted) return;
+
+    result.when(
+      success: (data) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('모든 데이터가 초기화되었습니다'),
+            backgroundColor: ThemeConstants.successColor,
+          ),
+        );
       },
       failure: (message, exception) {
         ScaffoldMessenger.of(context).showSnackBar(

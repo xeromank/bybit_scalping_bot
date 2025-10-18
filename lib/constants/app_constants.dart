@@ -30,9 +30,9 @@ class AppConstants {
   static const double defaultBollingerRsiOverbought = 70.0;
   static const double defaultBollingerRsiOversold = 30.0;
 
-  // Bollinger Mode: Profit/Loss Targets
-  static const double defaultBollingerProfitPercent = 0.5;
-  static const double defaultBollingerStopLossPercent = 0.15;
+  // Bollinger Mode: Profit/Loss Targets (ROE%)
+  static const double defaultBollingerProfitPercent = 5.0;  // Conservative scalping
+  static const double defaultBollingerStopLossPercent = 3.0;
 
   // ===== EMA TREND MODE SETTINGS =====
 
@@ -47,9 +47,9 @@ class AppConstants {
   static const double defaultRsi14LongThreshold = 30.0;
   static const double defaultRsi14ShortThreshold = 70.0;
 
-  // EMA Mode: Profit/Loss Targets
-  static const double defaultEmaProfitPercent = 0.7; // 0.6-0.8% range, using 0.7% as default
-  static const double defaultEmaStopLossPercent = 0.2;
+  // EMA Mode: Profit/Loss Targets (ROE%)
+  static const double defaultEmaProfitPercent = 5.0;  // Conservative scalping
+  static const double defaultEmaStopLossPercent = 3.0;
 
   // ===== COMMON SETTINGS (Both Modes) =====
 

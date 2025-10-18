@@ -443,57 +443,48 @@ class TradingProvider extends ChangeNotifier {
     // Fee structure: ~0.055% taker fee per trade (entry + exit = 0.11%)
     const baseFee = 0.11; // Base fee in percentage
 
-    // Calculate ROE targets based on price movement efficiency
+    // Conservative ROE targets for realistic scalping (0.5% avg price move)
+    // Risk-reward ratio: 1.67:1 (TP:SL)
     if (leverage <= 2) {
-      // 0.3% price move × 2x = 0.6% ROE
-      // Fee impact: 0.22% → Net: 0.38%
-      _profitTargetPercent = 0.6;
-      _stopLossPercent = 0.3; // Half of TP
+      // 0.5% price move × 2x = 1% ROE
+      _profitTargetPercent = 1.0;
+      _stopLossPercent = 0.6;
     } else if (leverage <= 3) {
-      // 0.3% price move × 3x = 0.9% ROE
-      // Fee impact: 0.33% → Net: 0.57%
-      _profitTargetPercent = 0.9;
-      _stopLossPercent = 0.5;
-    } else if (leverage <= 5) {
-      // 0.3% price move × 5x = 1.5% ROE
-      // Fee impact: 0.55% → Net: 0.95%
+      // 0.5% price move × 3x = 1.5% ROE
       _profitTargetPercent = 1.5;
-      _stopLossPercent = 0.8;
+      _stopLossPercent = 0.9;
+    } else if (leverage <= 5) {
+      // 0.5% price move × 5x = 2.5% ROE
+      _profitTargetPercent = 2.5;
+      _stopLossPercent = 1.5;
     } else if (leverage <= 10) {
-      // 0.3% price move × 10x = 3% ROE
-      // Fee impact: 1.1% → Net: 1.9%
-      _profitTargetPercent = 3.0;
-      _stopLossPercent = 1.5;
-    } else if (leverage <= 15) {
-      // 0.2% price move × 15x = 3% ROE
-      // Fee impact: 1.65% → Net: 1.35%
-      _profitTargetPercent = 3.0;
-      _stopLossPercent = 1.5;
-    } else if (leverage <= 20) {
-      // 0.2% price move × 20x = 4% ROE
-      // Fee impact: 2.2% → Net: 1.8%
-      _profitTargetPercent = 4.0;
-      _stopLossPercent = 2.0;
-    } else if (leverage <= 30) {
-      // 0.2% price move × 30x = 6% ROE
-      // Fee impact: 3.3% → Net: 2.7%
-      _profitTargetPercent = 6.0;
+      // 0.5% price move × 10x = 5% ROE (Conservative default)
+      _profitTargetPercent = 5.0;
       _stopLossPercent = 3.0;
+    } else if (leverage <= 15) {
+      // 0.4% price move × 15x = 6% ROE
+      _profitTargetPercent = 6.0;
+      _stopLossPercent = 3.6;
+    } else if (leverage <= 20) {
+      // 0.4% price move × 20x = 8% ROE
+      _profitTargetPercent = 8.0;
+      _stopLossPercent = 4.8;
+    } else if (leverage <= 30) {
+      // 0.3% price move × 30x = 9% ROE
+      _profitTargetPercent = 9.0;
+      _stopLossPercent = 5.4;
     } else if (leverage <= 50) {
       // 0.2% price move × 50x = 10% ROE
-      // Fee impact: 5.5% → Net: 4.5%
       _profitTargetPercent = 10.0;
-      _stopLossPercent = 5.0;
+      _stopLossPercent = 6.0;
     } else if (leverage <= 75) {
-      // 0.2% price move × 75x = 15% ROE
-      // Fee impact: 8.25% → Net: 6.75%
-      _profitTargetPercent = 15.0;
-      _stopLossPercent = 7.5;
+      // 0.15% price move × 75x = 11.25% ROE
+      _profitTargetPercent = 11.0;
+      _stopLossPercent = 6.6;
     } else {
-      // 0.2% price move × 100x = 20% ROE
-      // Fee impact: 11% → Net: 9.0%
-      _profitTargetPercent = 20.0;
-      _stopLossPercent = 10.0;
+      // 0.15% price move × 100x = 15% ROE
+      _profitTargetPercent = 15.0;
+      _stopLossPercent = 9.0;
     }
   }
 
@@ -755,6 +746,30 @@ class TradingProvider extends ChangeNotifier {
     }
   }
 
+  /// Clears all data (logs and database)
+  Future<Result<bool>> clearAllData() async {
+    if (_isRunning) {
+      return const Failure('Cannot clear data while bot is running. Please stop the bot first.');
+    }
+
+    try {
+      // Clear database
+      await _databaseService.clearAllData();
+
+      // Clear in-memory logs
+      _logs.clear();
+
+      _addLog(TradeLog.success('All data cleared (logs and order history)'));
+      notifyListeners();
+
+      return const Success(true);
+    } catch (e) {
+      final error = 'Failed to clear data: ${e.toString()}';
+      _addLog(TradeLog.error(error));
+      return Failure(error);
+    }
+  }
+
   /// Starts monitoring loop (periodic position status check)
   void _startMonitoring() {
     _monitoringTimer = Timer.periodic(
@@ -961,21 +976,9 @@ class TradingProvider extends ChangeNotifier {
       // Format qty to appropriate decimal places
       final qtyStr = qty.toStringAsFixed(stepDecimalPlaces);
 
-      // Determine actual TP/SL based on the effective mode (important for auto mode)
-      // Auto mode may have selected a different strategy than the user's original selection
+      // Use user-configured TP/SL values (from UI or auto-adjusted by leverage)
       double effectiveProfitPercent = _profitTargetPercent;
       double effectiveStopLossPercent = _stopLossPercent;
-
-      if (_tradingMode == TradingMode.auto && _technicalAnalysis != null) {
-        // Auto mode: Use TP/SL based on the actual strategy that was selected
-        if (_technicalAnalysis!.mode == TradingMode.bollinger) {
-          effectiveProfitPercent = AppConstants.defaultBollingerProfitPercent;
-          effectiveStopLossPercent = AppConstants.defaultBollingerStopLossPercent;
-        } else {
-          effectiveProfitPercent = AppConstants.defaultEmaProfitPercent;
-          effectiveStopLossPercent = AppConstants.defaultEmaStopLossPercent;
-        }
-      }
 
       // Calculate TP/SL prices based on ROE targets
       // ROE% = (profit / margin) * 100
