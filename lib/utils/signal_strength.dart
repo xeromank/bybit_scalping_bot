@@ -179,7 +179,7 @@ SignalStrength calculateEmaSignalStrength({
 
   final currentPrice = analysis.currentPrice;
   final rsi6 = analysis.rsi6;
-  final rsi14 = analysis.rsi12; // Actually RSI 14
+  final rsi14 = analysis.rsi14; // Actually RSI 14
   final currentVolume = analysis.currentVolume;
   final volumeMA5 = analysis.volumeMA5;
   final ema9 = analysis.ema9;
@@ -213,7 +213,7 @@ SignalStrength calculateEmaSignalStrength({
       rsiScore = 3.0;
     } else if (rsi6 < 25 && rsi14 < 40) {
       rsiScore = 2.0;
-    } else if (rsi6 < analysis.rsi6LongThreshold && rsi14 < analysis.rsi12LongThreshold) {
+    } else if (rsi6 < analysis.rsi6LongThreshold && rsi14 < analysis.rsi14LongThreshold) {
       rsiScore = 1.0;
     }
   } else {
@@ -222,7 +222,7 @@ SignalStrength calculateEmaSignalStrength({
       rsiScore = 3.0;
     } else if (rsi6 > 75 && rsi14 > 60) {
       rsiScore = 2.0;
-    } else if (rsi6 > analysis.rsi6ShortThreshold && rsi14 > analysis.rsi12ShortThreshold) {
+    } else if (rsi6 > analysis.rsi6ShortThreshold && rsi14 > analysis.rsi14ShortThreshold) {
       rsiScore = 1.0;
     }
   }

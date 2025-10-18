@@ -634,8 +634,8 @@ class TradingProvider extends ChangeNotifier {
         // EMA mode parameters
         rsi6LongThreshold: _rsi6LongThreshold,
         rsi6ShortThreshold: _rsi6ShortThreshold,
-        rsi12LongThreshold: _rsi14LongThreshold,
-        rsi12ShortThreshold: _rsi14ShortThreshold,
+        rsi14LongThreshold: _rsi14LongThreshold,
+        rsi14ShortThreshold: _rsi14ShortThreshold,
         useEmaFilter: false, // Not used in current implementation
         emaPeriod: 21, // Not used in current implementation
       );
@@ -803,6 +803,140 @@ class TradingProvider extends ChangeNotifier {
       return const Success(true);
     } catch (e) {
       final error = 'Failed to clear data: ${e.toString()}';
+      _addLog(TradeLog.error(error));
+      return Failure(error);
+    }
+  }
+
+  /// Manual Long Entry (for testing)
+  ///
+  /// Creates a Long position using current settings without checking entry signals
+  Future<Result<bool>> manualLongEntry() async {
+    if (_isRunning) {
+      return const Failure('Cannot manually enter while bot is running. Stop the bot first.');
+    }
+
+    // Check if we have position already
+    final positionResult = await _repository.getPosition(symbol: _symbol);
+    if (positionResult.isSuccess) {
+      final position = positionResult.dataOrNull;
+      if (position != null && !position.isClosed) {
+        return const Failure('Position already exists. Close it before manual entry.');
+      }
+    }
+
+    // Check if we have technical analysis data
+    if (_technicalAnalysis == null) {
+      return const Failure('No market data available. Wait for data to load.');
+    }
+
+    try {
+      // Set leverage first
+      _addLog(TradeLog.info('🔧 [Manual Long] Setting leverage to $_leverage...'));
+      final leverageResult = await _repository.setLeverage(
+        symbol: _symbol,
+        buyLeverage: _leverage,
+        sellLeverage: _leverage,
+      );
+
+      if (leverageResult.isFailure) {
+        final errorMsg = leverageResult.errorOrNull ?? '';
+        if (!errorMsg.toLowerCase().contains('leverage not modified')) {
+          final error = 'Failed to set leverage: $errorMsg';
+          _addLog(TradeLog.error(error));
+          return Failure(error);
+        }
+      }
+
+      _addLog(TradeLog.success('🟢 [Manual Long] Creating Long position...'));
+
+      // Create a basic signal strength for manual entry
+      final manualSignalStrength = SignalStrength(
+        totalScore: 5.0, // Medium strength for manual entry
+        bollingerScore: 1.5,
+        rsiScore: 1.5,
+        volumeScore: 1.0,
+        candleSizeScore: 1.0,
+        signalGrade: 'B (Manual)',
+        recommendation: 'Manual entry - bypassing signal detection',
+      );
+
+      await _createOrderWithPrice(
+        ApiConstants.orderSideBuy,
+        _technicalAnalysis!,
+        manualSignalStrength,
+      );
+
+      return const Success(true);
+    } catch (e) {
+      final error = 'Manual Long entry failed: ${e.toString()}';
+      _addLog(TradeLog.error(error));
+      return Failure(error);
+    }
+  }
+
+  /// Manual Short Entry (for testing)
+  ///
+  /// Creates a Short position using current settings without checking entry signals
+  Future<Result<bool>> manualShortEntry() async {
+    if (_isRunning) {
+      return const Failure('Cannot manually enter while bot is running. Stop the bot first.');
+    }
+
+    // Check if we have position already
+    final positionResult = await _repository.getPosition(symbol: _symbol);
+    if (positionResult.isSuccess) {
+      final position = positionResult.dataOrNull;
+      if (position != null && !position.isClosed) {
+        return const Failure('Position already exists. Close it before manual entry.');
+      }
+    }
+
+    // Check if we have technical analysis data
+    if (_technicalAnalysis == null) {
+      return const Failure('No market data available. Wait for data to load.');
+    }
+
+    try {
+      // Set leverage first
+      _addLog(TradeLog.info('🔧 [Manual Short] Setting leverage to $_leverage...'));
+      final leverageResult = await _repository.setLeverage(
+        symbol: _symbol,
+        buyLeverage: _leverage,
+        sellLeverage: _leverage,
+      );
+
+      if (leverageResult.isFailure) {
+        final errorMsg = leverageResult.errorOrNull ?? '';
+        if (!errorMsg.toLowerCase().contains('leverage not modified')) {
+          final error = 'Failed to set leverage: $errorMsg';
+          _addLog(TradeLog.error(error));
+          return Failure(error);
+        }
+      }
+
+      _addLog(TradeLog.success('🔴 [Manual Short] Creating Short position...'));
+
+      // Create a basic signal strength for manual entry
+      final manualSignalStrength = SignalStrength(
+        totalScore: 5.0, // Medium strength for manual entry
+        bollingerScore: 1.5,
+        rsiScore: 1.5,
+        volumeScore: 1.0,
+        candleSizeScore: 1.0,
+        signalGrade: 'B (Manual)',
+        recommendation: 'Manual entry - bypassing signal detection',
+      );
+
+      await _createOrderWithPrice(
+        ApiConstants.orderSideSell,
+        _technicalAnalysis!,
+        manualSignalStrength,
+      );
+
+      return const Success(true);
+    } catch (e) {
+      final error = 'Manual Short entry failed: ${e.toString()}';
       _addLog(TradeLog.error(error));
       return Failure(error);
     }
@@ -1082,7 +1216,7 @@ class TradingProvider extends ChangeNotifier {
           slPrice: double.parse(slPriceStr),
           signalStrength: signalStrength.totalScore,
           rsi6: analysis.rsi6,
-          rsi14: analysis.rsi12,
+          rsi14: analysis.rsi14,
           ema9: analysis.ema9,
           ema21: analysis.ema21,
           volume: analysis.currentVolume,
@@ -1199,7 +1333,7 @@ class TradingProvider extends ChangeNotifier {
     _addLog(TradeLog.info(
       'Price: \$${analysis.currentPrice.toStringAsFixed(2)} | '
       'RSI(6): ${analysis.rsi6.toStringAsFixed(1)} | '
-      'RSI(14): ${analysis.rsi12.toStringAsFixed(1)}',
+      'RSI(14): ${analysis.rsi14.toStringAsFixed(1)}',
     ));
 
     // EMA

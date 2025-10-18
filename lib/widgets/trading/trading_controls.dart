@@ -28,6 +28,8 @@ class _TradingControlsState extends State<TradingControls> {
   late TextEditingController _rsi6ShortController;
   late TextEditingController _rsi14LongController;
   late TextEditingController _rsi14ShortController;
+  late TextEditingController _bollingerRsiOverboughtController;
+  late TextEditingController _bollingerRsiOversoldController;
 
   // Cache last technical analysis to prevent flickering
   TechnicalAnalysis? _lastTechnicalAnalysis;
@@ -52,6 +54,10 @@ class _TradingControlsState extends State<TradingControls> {
         TextEditingController(text: provider.rsi14LongThreshold.toString());
     _rsi14ShortController =
         TextEditingController(text: provider.rsi14ShortThreshold.toString());
+    _bollingerRsiOverboughtController =
+        TextEditingController(text: provider.bollingerRsiOverbought.toString());
+    _bollingerRsiOversoldController =
+        TextEditingController(text: provider.bollingerRsiOversold.toString());
   }
 
   @override
@@ -64,6 +70,8 @@ class _TradingControlsState extends State<TradingControls> {
     _rsi6ShortController.dispose();
     _rsi14LongController.dispose();
     _rsi14ShortController.dispose();
+    _bollingerRsiOverboughtController.dispose();
+    _bollingerRsiOversoldController.dispose();
     super.dispose();
   }
 
@@ -225,9 +233,9 @@ class _TradingControlsState extends State<TradingControls> {
                           ),
                           _buildIndicator(
                             'RSI(14)',
-                            _lastTechnicalAnalysis?.rsi12.toStringAsFixed(1) ?? '--',
+                            _lastTechnicalAnalysis?.rsi14.toStringAsFixed(1) ?? '--',
                             _lastTechnicalAnalysis != null
-                                ? _getRSIColor(_lastTechnicalAnalysis!.rsi12)
+                                ? _getRSIColor(_lastTechnicalAnalysis!.rsi14)
                                 : ThemeConstants.textSecondaryColor,
                           ),
                         ],
@@ -714,6 +722,67 @@ class _TradingControlsState extends State<TradingControls> {
                             ),
                           ],
                         ),
+
+                        // Bollinger Band RSI Thresholds (only show in Bollinger mode)
+                        if (provider.tradingMode == TradingMode.bollinger) ...[
+                          const SizedBox(height: ThemeConstants.spacingSmall),
+                          const Divider(),
+                          const SizedBox(height: ThemeConstants.spacingSmall),
+                          const Text(
+                            '볼린저 밴드 RSI(14) 임계값',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: ThemeConstants.textSecondaryColor,
+                            ),
+                          ),
+                          const SizedBox(height: ThemeConstants.spacingSmall),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _bollingerRsiOversoldController,
+                                  decoration: ThemeConstants.inputDecoration(
+                                    labelText: 'RSI 과매도 (Long)',
+                                    prefixIcon: Icons.arrow_upward,
+                                  ),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                                  ],
+                                  enabled: !isRunning,
+                                  onChanged: (value) {
+                                    final threshold = double.tryParse(value);
+                                    if (threshold != null) {
+                                      provider.setBollingerRsiOversold(threshold);
+                                    }
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: ThemeConstants.spacingSmall),
+                              Expanded(
+                                child: TextField(
+                                  controller: _bollingerRsiOverboughtController,
+                                  decoration: ThemeConstants.inputDecoration(
+                                    labelText: 'RSI 과매수 (Short)',
+                                    prefixIcon: Icons.arrow_downward,
+                                  ),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  inputFormatters: [
+                                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
+                                  ],
+                                  enabled: !isRunning,
+                                  onChanged: (value) {
+                                    final threshold = double.tryParse(value);
+                                    if (threshold != null) {
+                                      provider.setBollingerRsiOverbought(threshold);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -733,8 +802,50 @@ class _TradingControlsState extends State<TradingControls> {
                       onPressed: () => _startBot(provider),
                     ),
 
-              // Clear Data Button (only visible when bot is stopped)
+              // Manual Entry Buttons (only visible when bot is stopped)
               if (!isRunning) ...[
+                const SizedBox(height: ThemeConstants.spacingSmall),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _manualLongEntry(provider),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green.shade600,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.arrow_upward, size: 20),
+                            SizedBox(width: 8),
+                            Text('수동 롱'),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: ThemeConstants.spacingSmall),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _manualShortEntry(provider),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade600,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.arrow_downward, size: 20),
+                            SizedBox(width: 8),
+                            Text('수동 숏'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: ThemeConstants.spacingSmall),
                 OutlinedButton(
                   onPressed: () => _clearAllData(provider),
@@ -912,6 +1023,120 @@ class _TradingControlsState extends State<TradingControls> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('모든 데이터가 초기화되었습니다'),
+            backgroundColor: ThemeConstants.successColor,
+          ),
+        );
+      },
+      failure: (message, exception) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: ThemeConstants.errorColor,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _manualLongEntry(TradingProvider provider) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('수동 롱 진입'),
+        content: Text(
+          '현재 설정으로 롱 포지션을 생성합니다.\n\n'
+          '심볼: ${provider.symbol}\n'
+          '투입금액: \$${provider.orderAmount.toStringAsFixed(2)}\n'
+          '레버리지: ${provider.leverage}x\n'
+          'TP: ${provider.profitTargetPercent.toStringAsFixed(1)}% ROE\n'
+          'SL: ${provider.stopLossPercent.toStringAsFixed(1)}% ROE\n\n'
+          '진행하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.green.shade700,
+            ),
+            child: const Text('진입'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final result = await provider.manualLongEntry();
+
+    if (!mounted) return;
+
+    result.when(
+      success: (data) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('롱 포지션 주문이 생성되었습니다'),
+            backgroundColor: ThemeConstants.successColor,
+          ),
+        );
+      },
+      failure: (message, exception) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: ThemeConstants.errorColor,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _manualShortEntry(TradingProvider provider) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('수동 숏 진입'),
+        content: Text(
+          '현재 설정으로 숏 포지션을 생성합니다.\n\n'
+          '심볼: ${provider.symbol}\n'
+          '투입금액: \$${provider.orderAmount.toStringAsFixed(2)}\n'
+          '레버리지: ${provider.leverage}x\n'
+          'TP: ${provider.profitTargetPercent.toStringAsFixed(1)}% ROE\n'
+          'SL: ${provider.stopLossPercent.toStringAsFixed(1)}% ROE\n\n'
+          '진행하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red.shade700,
+            ),
+            child: const Text('진입'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final result = await provider.manualShortEntry();
+
+    if (!mounted) return;
+
+    result.when(
+      success: (data) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('숏 포지션 주문이 생성되었습니다'),
             backgroundColor: ThemeConstants.successColor,
           ),
         );

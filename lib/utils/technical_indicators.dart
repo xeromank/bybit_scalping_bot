@@ -240,11 +240,11 @@ class TechnicalAnalysis {
 
   // EMA Mode specific
   final double rsi6;
-  final double rsi12;  // Actually RSI 14 in new design
+  final double rsi14;  // Actually RSI 14 in new design
   final double rsi6LongThreshold;
   final double rsi6ShortThreshold;
-  final double rsi12LongThreshold;  // Actually RSI 14 threshold
-  final double rsi12ShortThreshold;  // Actually RSI 14 threshold
+  final double rsi14LongThreshold;  // Actually RSI 14 threshold
+  final double rsi14ShortThreshold;  // Actually RSI 14 threshold
   final bool useEmaFilter;
   final int emaPeriod;
   final double selectedEma;
@@ -268,11 +268,11 @@ class TechnicalAnalysis {
     required this.ema21,
     // EMA mode parameters
     required this.rsi6,
-    required this.rsi12,
+    required this.rsi14,
     required this.rsi6LongThreshold,
     required this.rsi6ShortThreshold,
-    required this.rsi12LongThreshold,
-    required this.rsi12ShortThreshold,
+    required this.rsi14LongThreshold,
+    required this.rsi14ShortThreshold,
     required this.useEmaFilter,
     required this.emaPeriod,
     required this.selectedEma,
@@ -407,10 +407,10 @@ class TechnicalAnalysis {
   /// 4. Volume > avgVolume × 1.5 (optional)
   bool get _isEmaLongSignal {
     // RSI conditions
-    final rsiCondition = rsi6 < rsi6LongThreshold && rsi12 < rsi12LongThreshold;
+    final rsiCondition = rsi6 < rsi6LongThreshold && rsi14 < rsi14LongThreshold;
 
     // Extreme RSI: Ignore other conditions if RSI is extremely oversold
-    final extremeRsiCondition = rsi6 < (rsi6LongThreshold - 5) && rsi12 < (rsi12LongThreshold - 5);
+    final extremeRsiCondition = rsi6 < (rsi6LongThreshold - 15) && rsi14 < (rsi14LongThreshold - 15);
     if (extremeRsiCondition) return true;
 
     // EMA trend condition: Bullish crossover or price above EMA
@@ -437,10 +437,10 @@ class TechnicalAnalysis {
   /// 4. Volume > avgVolume × 1.5 (optional)
   bool get _isEmaShortSignal {
     // RSI conditions
-    final rsiCondition = rsi6 > rsi6ShortThreshold && rsi12 > rsi12ShortThreshold;
+    final rsiCondition = rsi6 > rsi6ShortThreshold && rsi14 > rsi14ShortThreshold;
 
     // Extreme RSI: Ignore other conditions if RSI is extremely overbought
-    final extremeRsiCondition = rsi6 > (rsi6ShortThreshold + 5) && rsi12 > (rsi12ShortThreshold + 5);
+    final extremeRsiCondition = rsi6 > (rsi6ShortThreshold + 15) && rsi14 > (rsi14ShortThreshold + 15);
     if (extremeRsiCondition) return true;
 
     // EMA trend condition: Bearish crossover or price below EMA
@@ -465,16 +465,16 @@ class TechnicalAnalysis {
     if (isLongSignal) return false;
 
     final rsi6Ok = rsi6 < rsi6LongThreshold;
-    final rsi12Ok = rsi12 < rsi12LongThreshold;
+    final rsi14Ok = rsi14 < rsi14LongThreshold;
 
-    if (!rsi6Ok && !rsi12Ok) return false;
+    if (!rsi6Ok && !rsi14Ok) return false;
 
     if (useEmaFilter) {
       final trendOk = currentPrice > selectedEma;
-      return trendOk && (rsi6Ok || rsi12Ok);
+      return trendOk && (rsi6Ok || rsi14Ok);
     }
 
-    return rsi6Ok || rsi12Ok;
+    return rsi6Ok || rsi14Ok;
   }
 
   /// EMA Short Preparing: One or more conditions partially met
@@ -482,16 +482,16 @@ class TechnicalAnalysis {
     if (isShortSignal) return false;
 
     final rsi6Ok = rsi6 > rsi6ShortThreshold;
-    final rsi12Ok = rsi12 > rsi12ShortThreshold;
+    final rsi14Ok = rsi14 > rsi14ShortThreshold;
 
-    if (!rsi6Ok && !rsi12Ok) return false;
+    if (!rsi6Ok && !rsi14Ok) return false;
 
     if (useEmaFilter) {
       final trendOk = currentPrice < selectedEma;
-      return trendOk && (rsi6Ok || rsi12Ok);
+      return trendOk && (rsi6Ok || rsi14Ok);
     }
 
-    return rsi6Ok || rsi12Ok;
+    return rsi6Ok || rsi14Ok;
   }
 
   /// Get signal status text
@@ -519,7 +519,7 @@ class TechnicalAnalysis {
     } else {
       return 'Technical Analysis (EMA Mode):\n'
           '  Price: \$$currentPrice\n'
-          '  RSI(6): ${rsi6.toStringAsFixed(2)} | RSI(14): ${rsi12.toStringAsFixed(2)}\n'
+          '  RSI(6): ${rsi6.toStringAsFixed(2)} | RSI(14): ${rsi14.toStringAsFixed(2)}\n'
           '  EMA(9): \$${ema9.toStringAsFixed(2)} | EMA(21): \$${ema21.toStringAsFixed(2)}\n'
           '  Volume: ${currentVolume.toStringAsFixed(0)} ($volumeRatio% of MA5)\n'
           '  Status: $signalStatus';
@@ -629,8 +629,8 @@ TechnicalAnalysis analyzePriceData(
   // EMA mode parameters
   double? rsi6LongThreshold,
   double? rsi6ShortThreshold,
-  double? rsi12LongThreshold,
-  double? rsi12ShortThreshold,
+  double? rsi14LongThreshold,
+  double? rsi14ShortThreshold,
   bool? useEmaFilter,
   int? emaPeriod,
 }) {
@@ -667,7 +667,7 @@ TechnicalAnalysis analyzePriceData(
 
     // Also calculate RSI(6) and RSI(14) for display purposes
     final rsi6 = calculateRSI(closePrices, 6);
-    final rsi12 = calculateRSI(closePrices, 14);  // Actually RSI 14
+    final rsi14 = calculateRSI(closePrices, 14);  // Actually RSI 14
 
     return TechnicalAnalysis(
       mode: effectiveMode,  // Use effective mode (auto-selected or original)
@@ -679,11 +679,11 @@ TechnicalAnalysis analyzePriceData(
       ema21: ema21,
       // EMA mode parameters (calculate for display even in Bollinger mode)
       rsi6: rsi6,
-      rsi12: rsi12,
+      rsi14: rsi14,
       rsi6LongThreshold: rsi6LongThreshold ?? 25.0,
       rsi6ShortThreshold: rsi6ShortThreshold ?? 75.0,
-      rsi12LongThreshold: rsi12LongThreshold ?? 40.0,
-      rsi12ShortThreshold: rsi12ShortThreshold ?? 60.0,
+      rsi14LongThreshold: rsi14LongThreshold ?? 30.0,
+      rsi14ShortThreshold: rsi14ShortThreshold ?? 70.0,
       useEmaFilter: false,
       emaPeriod: 21,
       selectedEma: ema21,
@@ -698,7 +698,7 @@ TechnicalAnalysis analyzePriceData(
   } else {
     // EMA Mode
     final rsi6 = calculateRSI(closePrices, 6);
-    final rsi12 = calculateRSI(closePrices, 14);  // Actually RSI 14
+    final rsi14 = calculateRSI(closePrices, 14);  // Actually RSI 14
 
     final emaPer = emaPeriod ?? 21;
     double selectedEma;
@@ -723,11 +723,11 @@ TechnicalAnalysis analyzePriceData(
       ema21: ema21,
       // EMA mode parameters
       rsi6: rsi6,
-      rsi12: rsi12,
+      rsi14: rsi14,
       rsi6LongThreshold: rsi6LongThreshold ?? 25.0,
       rsi6ShortThreshold: rsi6ShortThreshold ?? 75.0,
-      rsi12LongThreshold: rsi12LongThreshold ?? 40.0,
-      rsi12ShortThreshold: rsi12ShortThreshold ?? 60.0,
+      rsi14LongThreshold: rsi14LongThreshold ?? 30.0,
+      rsi14ShortThreshold: rsi14ShortThreshold ?? 70.0,
       useEmaFilter: useEmaFilter ?? false,
       emaPeriod: emaPer,
       selectedEma: selectedEma,
