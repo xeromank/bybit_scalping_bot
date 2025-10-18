@@ -7,10 +7,12 @@ import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 /// Responsibility: Display current positions
 class PositionCard extends StatelessWidget {
   final List<Position> positions;
+  final Function(String symbol)? onClosePosition;
 
   const PositionCard({
     super.key,
     required this.positions,
+    this.onClosePosition,
   });
 
   @override
@@ -223,6 +225,39 @@ class PositionCard extends StatelessWidget {
               ),
             ],
           ),
+
+          // Close Position Button
+          if (onClosePosition != null) ...[
+            const SizedBox(height: ThemeConstants.spacingMedium),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => onClosePosition!(position.symbol),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange.shade600,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.close, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      '포지션 닫기',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -808,6 +808,65 @@ class TradingProvider extends ChangeNotifier {
     }
   }
 
+  /// Close a specific position by symbol
+  ///
+  /// Creates a market order in the opposite direction to close the position
+  Future<Result<bool>> closePositionBySymbol(String symbol) async {
+    try {
+      // Get the position for this symbol
+      final positionResult = await _repository.getPosition(symbol: symbol);
+      if (positionResult.isFailure) {
+        return Failure('Failed to fetch position: ${positionResult.errorOrNull}');
+      }
+
+      final position = positionResult.dataOrNull;
+      if (position == null || position.isClosed) {
+        return const Failure('No open position to close');
+      }
+
+      _addLog(TradeLog.info('🔧 Closing ${position.isLong ? "Long" : "Short"} position for $symbol...'));
+
+      // Create opposite side order to close position
+      final closeSide = position.isLong ? ApiConstants.orderSideSell : ApiConstants.orderSideBuy;
+      final qty = position.size;
+
+      final request = OrderRequest(
+        symbol: symbol,
+        side: closeSide,
+        orderType: ApiConstants.orderTypeMarket,
+        qty: qty,
+        positionIdx: ApiConstants.positionIdxOneWay,
+        reduceOnly: true, // Important: only reduce position, don't open new one
+      );
+
+      _addLog(TradeLog.info(
+        'Closing ${position.isLong ? "Long" : "Short"} position: $qty $symbol @ Market',
+      ));
+
+      final result = await _repository.createOrder(request: request);
+
+      if (result.isSuccess) {
+        _addLog(TradeLog.success('✅ Position closed successfully for $symbol'));
+
+        // Clear current position if it matches
+        if (_currentPosition?.symbol == symbol) {
+          _currentPosition = null;
+        }
+        notifyListeners();
+
+        return const Success(true);
+      } else {
+        final error = 'Failed to close position: ${result.errorOrNull}';
+        _addLog(TradeLog.error(error));
+        return Failure(error);
+      }
+    } catch (e) {
+      final error = 'Position close error: ${e.toString()}';
+      _addLog(TradeLog.error(error));
+      return Failure(error);
+    }
+  }
+
   /// Manual Long Entry (for testing)
   ///
   /// Creates a Long position using current settings without checking entry signals

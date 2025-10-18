@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/balance_provider.dart';
+import 'package:bybit_scalping_bot/providers/trading_provider.dart';
 import 'package:bybit_scalping_bot/widgets/trading/position_card.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 
@@ -209,7 +210,75 @@ class _BalanceCardState extends State<BalanceCard> with SingleTickerProviderStat
       return const Center(child: CircularProgressIndicator());
     }
 
-    return PositionCard(positions: provider.positions);
+    return PositionCard(
+      positions: provider.positions,
+      onClosePosition: (symbol) => _handleClosePosition(context, symbol),
+    );
+  }
+
+  /// Handle closing a position
+  Future<void> _handleClosePosition(BuildContext context, String symbol) async {
+    // Show confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('포지션 닫기'),
+        content: Text(
+          '$symbol 포지션을 시장가로 청산합니다.\n\n정말 진행하시겠습니까?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.orange.shade700,
+            ),
+            child: const Text('청산'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Get TradingProvider and close position
+    final tradingProvider = context.read<TradingProvider?>();
+    if (tradingProvider == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('TradingProvider를 찾을 수 없습니다'),
+          backgroundColor: ThemeConstants.errorColor,
+        ),
+      );
+      return;
+    }
+
+    final result = await tradingProvider.closePositionBySymbol(symbol);
+
+    if (!mounted) return;
+
+    result.when(
+      success: (data) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$symbol 포지션이 청산되었습니다'),
+            backgroundColor: ThemeConstants.successColor,
+          ),
+        );
+      },
+      failure: (message, exception) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: ThemeConstants.errorColor,
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildBalanceRow(String label, String value, {bool isMain = false, bool isPnL = false}) {

@@ -435,6 +435,7 @@ class _TradingControlsState extends State<TradingControls> {
                         DropdownMenuItem(value: 'XRPUSDT', child: Text('XRP/USDT')),
                         DropdownMenuItem(value: 'DOGEUSDT', child: Text('DOGE/USDT')),
                         DropdownMenuItem(value: 'ADAUSDT', child: Text('ADA/USDT')),
+                        DropdownMenuItem(value: 'COAIUSDT', child: Text('COAI/USDT')),
                       ],
                       onChanged: isRunning
                           ? null
