@@ -37,19 +37,32 @@ class TradingProvider extends ChangeNotifier {
   // Configuration
   String _symbol = AppConstants.defaultSymbol;
   double _orderAmount = AppConstants.defaultOrderAmount;
-  double _profitTargetPercent = AppConstants.defaultProfitTargetPercent;
-  double _stopLossPercent = AppConstants.defaultStopLossPercent;
   String _leverage = AppConstants.defaultLeverage;
 
-  // RSI Thresholds (configurable by user)
+  // Trading Mode (configurable by user)
+  TradingMode _tradingMode = TradingMode.bollinger; // Default to Bollinger Band strategy
+
+  // Bollinger Band Mode Settings (configurable by user)
+  int _bollingerPeriod = AppConstants.defaultBollingerPeriod;
+  double _bollingerStdDev = AppConstants.defaultBollingerStdDev;
+  int _bollingerRsiPeriod = AppConstants.defaultBollingerRsiPeriod;
+  double _bollingerRsiOverbought = AppConstants.defaultBollingerRsiOverbought;
+  double _bollingerRsiOversold = AppConstants.defaultBollingerRsiOversold;
+
+  // EMA Mode Settings (configurable by user)
   double _rsi6LongThreshold = AppConstants.defaultRsi6LongThreshold;
   double _rsi6ShortThreshold = AppConstants.defaultRsi6ShortThreshold;
-  double _rsi12LongThreshold = AppConstants.defaultRsi12LongThreshold;
-  double _rsi12ShortThreshold = AppConstants.defaultRsi12ShortThreshold;
+  int _rsi14Period = AppConstants.defaultRsi14Period; // Changed from RSI 12 to RSI 14
+  double _rsi14LongThreshold = AppConstants.defaultRsi14LongThreshold;
+  double _rsi14ShortThreshold = AppConstants.defaultRsi14ShortThreshold;
 
-  // EMA Settings (configurable by user)
-  bool _useEmaFilter = AppConstants.defaultUseEmaFilter;
-  int _emaPeriod = AppConstants.defaultEmaPeriod;
+  // Volume Filter Settings (common for both modes)
+  bool _useVolumeFilter = AppConstants.defaultUseVolumeFilter;
+  double _volumeMultiplier = AppConstants.defaultVolumeMultiplier;
+
+  // Dynamic TP/SL (calculated based on mode and leverage)
+  double _profitTargetPercent = AppConstants.defaultBollingerProfitPercent;
+  double _stopLossPercent = AppConstants.defaultBollingerStopLossPercent;
 
   // State
   bool _isRunning = false;
@@ -58,6 +71,7 @@ class TradingProvider extends ChangeNotifier {
   Timer? _monitoringTimer;
   StreamSubscription? _klineSubscription;
   final List<double> _realtimeClosePrices = [];
+  final List<double> _realtimeVolumes = []; // Store volumes from WebSocket
   double? _currentPrice; // Current price for selected symbol
   TechnicalAnalysis? _technicalAnalysis; // Technical indicators
   TradingStatus _tradingStatus = TradingStatus.noSignal; // Current trading status
@@ -71,12 +85,81 @@ class TradingProvider extends ChangeNotifier {
 
   /// Initializes the provider by subscribing to default symbol's kline
   Future<void> initialize() async {
+    // Load initial kline data from API first for immediate indicator display
+    await _loadInitialKlineData();
+
     if (_publicWsClient != null && _publicWsClient!.isConnected) {
       await _subscribeToKline();
       print('TradingProvider: Initialized with default symbol: $_symbol');
     }
 
+    // If bot is running (e.g., after hot reload), immediately check position
+    if (_isRunning) {
+      print('TradingProvider: Bot is running after reload, checking position...');
+      await _checkAndTrade();
+    }
+
     // Foreground task initialization is done when starting the bot on Android
+  }
+
+  /// Loads initial kline data from API to populate indicators immediately
+  Future<void> _loadInitialKlineData() async {
+    try {
+      print('TradingProvider: Loading initial kline data for $_symbol...');
+
+      // Fetch 50 candles of 5-minute kline data
+      final result = await _repository.apiClient.getKlines(
+        symbol: _symbol,
+        interval: AppConstants.defaultMainInterval,
+        limit: 50,
+      );
+
+      if (result['retCode'] == 0) {
+        final list = result['result']['list'] as List<dynamic>;
+
+        print('TradingProvider: API response - ${list.length} candles received');
+        if (list.isNotEmpty) {
+          print('TradingProvider: First candle sample: ${list[0]}');
+        }
+
+        // Clear existing data
+        _realtimeClosePrices.clear();
+        _realtimeVolumes.clear();
+
+        // Kline data comes in reverse chronological order (newest first), so reverse it
+        final reversedList = list.reversed.toList();
+
+        for (final kline in reversedList) {
+          final closePrice = double.tryParse(kline[4]?.toString() ?? '0') ?? 0.0;
+          final volume = double.tryParse(kline[5]?.toString() ?? '0') ?? 0.0;
+
+          if (closePrice > 0 && volume > 0) {
+            _realtimeClosePrices.add(closePrice);
+            _realtimeVolumes.add(volume);
+          }
+        }
+
+        print('TradingProvider: Parsed ${_realtimeClosePrices.length} valid candles');
+
+        // Update current price from the latest candle
+        if (_realtimeClosePrices.isNotEmpty) {
+          _currentPrice = _realtimeClosePrices.last;
+        }
+
+        print('TradingProvider: Loaded ${_realtimeClosePrices.length} candles from API');
+
+        // Calculate indicators immediately if we have enough data
+        if (_realtimeClosePrices.length >= 30) {
+          _calculateRealtimeIndicators();
+        }
+
+        notifyListeners();
+      } else {
+        print('TradingProvider: Failed to load initial kline data: ${result['retMsg']}');
+      }
+    } catch (e) {
+      print('TradingProvider: Error loading initial kline data: $e');
+    }
   }
 
   // Getters
@@ -93,15 +176,26 @@ class TradingProvider extends ChangeNotifier {
   TradingStatus get tradingStatus => _tradingStatus;
   DateTime? get lastStatusUpdate => _lastStatusUpdate;
 
-  // RSI Threshold Getters
+  // Trading Mode Getters
+  TradingMode get tradingMode => _tradingMode;
+
+  // Bollinger Band Mode Getters
+  int get bollingerPeriod => _bollingerPeriod;
+  double get bollingerStdDev => _bollingerStdDev;
+  int get bollingerRsiPeriod => _bollingerRsiPeriod;
+  double get bollingerRsiOverbought => _bollingerRsiOverbought;
+  double get bollingerRsiOversold => _bollingerRsiOversold;
+
+  // EMA Mode Getters
   double get rsi6LongThreshold => _rsi6LongThreshold;
   double get rsi6ShortThreshold => _rsi6ShortThreshold;
-  double get rsi12LongThreshold => _rsi12LongThreshold;
-  double get rsi12ShortThreshold => _rsi12ShortThreshold;
+  int get rsi14Period => _rsi14Period;
+  double get rsi14LongThreshold => _rsi14LongThreshold;
+  double get rsi14ShortThreshold => _rsi14ShortThreshold;
 
-  // EMA Settings Getters
-  bool get useEmaFilter => _useEmaFilter;
-  int get emaPeriod => _emaPeriod;
+  // Volume Filter Getters
+  bool get useVolumeFilter => _useVolumeFilter;
+  double get volumeMultiplier => _volumeMultiplier;
 
   // Setters with validation
   Future<void> setSymbol(String value) async {
@@ -114,16 +208,18 @@ class TradingProvider extends ChangeNotifier {
         // Unsubscribe from old symbol
         _klineSubscription?.cancel();
         _klineSubscription = null;
-        _realtimeClosePrices.clear();
 
         try {
-          await _publicWsClient!.unsubscribe('kline.1.$oldSymbol');
-          print('TradingProvider: Unsubscribed from kline.1.$oldSymbol');
+          await _publicWsClient!.unsubscribe('kline.${AppConstants.defaultMainInterval}.$oldSymbol');
+          print('TradingProvider: Unsubscribed from kline.${AppConstants.defaultMainInterval}.$oldSymbol');
         } catch (e) {
           print('TradingProvider: Error unsubscribing from old symbol: $e');
         }
 
-        // Subscribe to new symbol
+        // Load initial kline data for new symbol from API
+        await _loadInitialKlineData();
+
+        // Subscribe to new symbol for WebSocket updates
         await _subscribeToKline();
       }
 
@@ -174,7 +270,73 @@ class TradingProvider extends ChangeNotifier {
     }
   }
 
-  // RSI Threshold Setters
+  // Trading Mode Setter
+  void setTradingMode(TradingMode value) {
+    if (!_isRunning) {
+      _tradingMode = value;
+
+      // Auto-adjust TP/SL based on mode
+      if (_tradingMode == TradingMode.bollinger) {
+        // Bollinger mode: tighter TP/SL
+        _profitTargetPercent = AppConstants.defaultBollingerProfitPercent;
+        _stopLossPercent = AppConstants.defaultBollingerStopLossPercent;
+      } else {
+        // EMA mode: wider TP/SL
+        _profitTargetPercent = AppConstants.defaultEmaProfitPercent;
+        _stopLossPercent = AppConstants.defaultEmaStopLossPercent;
+      }
+
+      notifyListeners();
+    }
+  }
+
+  // Bollinger Band Mode Setters
+  void setBollingerPeriod(int value) {
+    if (!_isRunning &&
+        value >= AppConstants.minBollingerPeriod &&
+        value <= AppConstants.maxBollingerPeriod) {
+      _bollingerPeriod = value;
+      notifyListeners();
+    }
+  }
+
+  void setBollingerStdDev(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minBollingerStdDev &&
+        value <= AppConstants.maxBollingerStdDev) {
+      _bollingerStdDev = value;
+      notifyListeners();
+    }
+  }
+
+  void setBollingerRsiPeriod(int value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiPeriod &&
+        value <= AppConstants.maxRsiPeriod) {
+      _bollingerRsiPeriod = value;
+      notifyListeners();
+    }
+  }
+
+  void setBollingerRsiOverbought(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _bollingerRsiOverbought = value;
+      notifyListeners();
+    }
+  }
+
+  void setBollingerRsiOversold(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _bollingerRsiOversold = value;
+      notifyListeners();
+    }
+  }
+
+  // EMA Mode Setters
   void setRsi6LongThreshold(double value) {
     if (!_isRunning &&
         value >= AppConstants.minRsiThreshold &&
@@ -193,51 +355,46 @@ class TradingProvider extends ChangeNotifier {
     }
   }
 
-  void setRsi12LongThreshold(double value) {
+  void setRsi14Period(int value) {
     if (!_isRunning &&
-        value >= AppConstants.minRsiThreshold &&
-        value <= AppConstants.maxRsiThreshold) {
-      _rsi12LongThreshold = value;
+        value >= AppConstants.minRsiPeriod &&
+        value <= AppConstants.maxRsiPeriod) {
+      _rsi14Period = value;
       notifyListeners();
     }
   }
 
-  void setRsi12ShortThreshold(double value) {
+  void setRsi14LongThreshold(double value) {
     if (!_isRunning &&
         value >= AppConstants.minRsiThreshold &&
         value <= AppConstants.maxRsiThreshold) {
-      _rsi12ShortThreshold = value;
+      _rsi14LongThreshold = value;
       notifyListeners();
     }
   }
 
-  // EMA Settings Setters
-  void setUseEmaFilter(bool value) {
+  void setRsi14ShortThreshold(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minRsiThreshold &&
+        value <= AppConstants.maxRsiThreshold) {
+      _rsi14ShortThreshold = value;
+      notifyListeners();
+    }
+  }
+
+  // Volume Filter Setters
+  void setUseVolumeFilter(bool value) {
     if (!_isRunning) {
-      _useEmaFilter = value;
-
-      // Auto-adjust RSI thresholds based on EMA filter
-      if (_useEmaFilter) {
-        // EMA filter ON: More conservative (75/25)
-        _rsi6LongThreshold = 25.0;
-        _rsi6ShortThreshold = 75.0;
-        _rsi12LongThreshold = 40.0;
-        _rsi12ShortThreshold = 60.0;
-      } else {
-        // EMA filter OFF: Less conservative (80/20)
-        _rsi6LongThreshold = 20.0;
-        _rsi6ShortThreshold = 80.0;
-        _rsi12LongThreshold = 35.0;
-        _rsi12ShortThreshold = 65.0;
-      }
-
+      _useVolumeFilter = value;
       notifyListeners();
     }
   }
 
-  void setEmaPeriod(int value) {
-    if (!_isRunning && value >= 1 && value <= 500) {
-      _emaPeriod = value;
+  void setVolumeMultiplier(double value) {
+    if (!_isRunning &&
+        value >= AppConstants.minVolumeMultiplier &&
+        value <= AppConstants.maxVolumeMultiplier) {
+      _volumeMultiplier = value;
       notifyListeners();
     }
   }
@@ -318,8 +475,8 @@ class TradingProvider extends ChangeNotifier {
     }
 
     try {
-      // Subscribe to 1-minute kline for the current symbol
-      final topic = 'kline.1.$_symbol';
+      // Subscribe to 5-minute kline for the current symbol
+      final topic = 'kline.${AppConstants.defaultMainInterval}.$_symbol';
       await _publicWsClient!.subscribe(topic);
       _addLog(TradeLog.info('Subscribed to kline WebSocket: $topic'));
 
@@ -341,36 +498,101 @@ class TradingProvider extends ChangeNotifier {
   /// Handles kline update from WebSocket
   void _handleKlineUpdate(Map<String, dynamic> data) {
     try {
+      print('TradingProvider: WebSocket message received - topic: ${data['topic']}');
+
       if (data['topic'] == null || !data['topic'].toString().startsWith('kline')) {
+        print('TradingProvider: Ignoring non-kline message');
         return;
       }
 
       final klineData = data['data'] as List<dynamic>;
-      if (klineData.isEmpty) return;
+      if (klineData.isEmpty) {
+        print('TradingProvider: Empty kline data array');
+        return;
+      }
 
       final kline = klineData[0] as Map<String, dynamic>;
+      print('TradingProvider: Full kline data: $kline');
+
       final closePrice = double.tryParse(kline['close']?.toString() ?? '0') ?? 0.0;
+      final volume = double.tryParse(kline['volume']?.toString() ?? '0') ?? 0.0;
       final confirm = kline['confirm'] as bool? ?? false;
+
+      print('TradingProvider: Parsed kline - close: $closePrice, volume: $volume, confirm: $confirm');
 
       // Update current price for UI display (even for unconfirmed candles)
       if (closePrice > 0) {
         _currentPrice = closePrice;
-        notifyListeners();
       }
 
-      // Only add confirmed candles to avoid noise
-      if (confirm && closePrice > 0) {
-        _realtimeClosePrices.add(closePrice);
+      if (closePrice > 0 && volume > 0) {
+        if (confirm) {
+          // Confirmed candle - add as new candle
+          _realtimeClosePrices.add(closePrice);
+          _realtimeVolumes.add(volume);
 
-        // Keep only the latest 50 candles for analysis
-        if (_realtimeClosePrices.length > 50) {
-          _realtimeClosePrices.removeAt(0);
+          // Keep only the latest 50 candles for analysis
+          if (_realtimeClosePrices.length > 50) {
+            _realtimeClosePrices.removeAt(0);
+            _realtimeVolumes.removeAt(0);
+          }
+
+          print('TradingProvider: ✅ CONFIRMED candle added - close: $closePrice, volume: ${volume.toStringAsFixed(2)}, total candles: ${_realtimeClosePrices.length}');
+        } else {
+          // Unconfirmed candle - update the last candle in real-time
+          if (_realtimeClosePrices.isNotEmpty) {
+            _realtimeClosePrices[_realtimeClosePrices.length - 1] = closePrice;
+            _realtimeVolumes[_realtimeVolumes.length - 1] = volume;
+            print('TradingProvider: 🔄 UPDATING last candle - close: $closePrice, volume: ${volume.toStringAsFixed(2)}');
+          }
         }
 
-        print('TradingProvider: Received kline update - close: $closePrice, total candles: ${_realtimeClosePrices.length}');
+        // Calculate technical indicators if we have enough data (for both confirmed and unconfirmed)
+        if (_realtimeClosePrices.length >= 30) {
+          _calculateRealtimeIndicators();
+        } else {
+          print('TradingProvider: ⚠️ Not enough data yet (${_realtimeClosePrices.length}/30 candles) - skipping indicator calculation');
+        }
       }
     } catch (e) {
       print('TradingProvider: Error handling kline update: $e');
+    }
+  }
+
+  /// Calculates technical indicators from real-time WebSocket data
+  void _calculateRealtimeIndicators() {
+    try {
+      // Analyze technical indicators based on trading mode using WebSocket data
+      final analysis = analyzePriceData(
+        _realtimeClosePrices,
+        _realtimeVolumes,
+        mode: _tradingMode,
+        // Bollinger mode parameters
+        bollingerPeriod: _bollingerPeriod,
+        bollingerStdDev: _bollingerStdDev,
+        bollingerRsiPeriod: _bollingerRsiPeriod,
+        bollingerRsiOverbought: _bollingerRsiOverbought,
+        bollingerRsiOversold: _bollingerRsiOversold,
+        useVolumeFilter: _useVolumeFilter,
+        volumeMultiplier: _volumeMultiplier,
+        // EMA mode parameters
+        rsi6LongThreshold: _rsi6LongThreshold,
+        rsi6ShortThreshold: _rsi6ShortThreshold,
+        rsi12LongThreshold: _rsi14LongThreshold,
+        rsi12ShortThreshold: _rsi14ShortThreshold,
+        useEmaFilter: false, // Not used in current implementation
+        emaPeriod: 21, // Not used in current implementation
+      );
+
+      // Store technical analysis for UI display
+      _technicalAnalysis = analysis;
+
+      // Only log on significant changes (to reduce log spam)
+      print('TradingProvider: 📊 RSI(6): ${analysis.rsi6.toStringAsFixed(1)}, RSI(14): ${analysis.rsi12.toStringAsFixed(1)}, Price: \$${analysis.currentPrice.toStringAsFixed(2)}');
+
+      notifyListeners();
+    } catch (e) {
+      print('TradingProvider: ❌ Error calculating realtime indicators: $e');
     }
   }
 
@@ -467,16 +689,9 @@ class TradingProvider extends ChangeNotifier {
         _addLog(TradeLog.info('Background service stopped'));
       }
 
-      // Unsubscribe from kline WebSocket
-      _klineSubscription?.cancel();
-      _klineSubscription = null;
-      _realtimeClosePrices.clear();
-
-      if (_publicWsClient != null && _publicWsClient!.isConnected) {
-        await _publicWsClient!.unsubscribe('kline.1.$_symbol');
-      }
-
-      _addLog(TradeLog.info('Bot stopped (screen can sleep now)'));
+      // Keep WebSocket subscription active to continue displaying real-time RSI
+      // Do NOT unsubscribe or clear data - this allows indicators to update even when bot is stopped
+      _addLog(TradeLog.info('Bot stopped (RSI indicators will continue to update)'));
       notifyListeners();
 
       return const Success(true);
@@ -551,37 +766,12 @@ class TradingProvider extends ChangeNotifier {
   /// Finds entry signal using technical indicators
   Future<void> _findEntrySignal() async {
     try {
-      List<double> closePrices;
-      List<double> volumes;
-
-      // Always fetch from API to get both price and volume data
-      // Real-time WebSocket only provides price, not volume
-      final klineResponse = await _repository.apiClient.getKlines(
-        symbol: _symbol,
-        interval: '1', // 1-minute candles for scalping
-        limit: 50, // Need at least 30 for RSI(12) + EMA(21)
-      );
-
-      // Parse closing prices and volumes
-      closePrices = parseClosePrices(klineResponse);
-      volumes = parseVolumes(klineResponse);
-      print('TradingProvider: Using ${closePrices.length} kline candles with volume data');
-
-      // Analyze technical indicators with custom RSI thresholds and EMA settings
-      final analysis = analyzePriceData(
-        closePrices,
-        volumes,
-        rsi6LongThreshold: _rsi6LongThreshold,
-        rsi6ShortThreshold: _rsi6ShortThreshold,
-        rsi12LongThreshold: _rsi12LongThreshold,
-        rsi12ShortThreshold: _rsi12ShortThreshold,
-        useEmaFilter: _useEmaFilter,
-        emaPeriod: _emaPeriod,
-      );
-
-      // Store technical analysis for UI display
-      _technicalAnalysis = analysis;
-      notifyListeners();
+      // Use real-time analysis from WebSocket
+      final analysis = _technicalAnalysis;
+      if (analysis == null) {
+        _addLog(TradeLog.warning('No technical analysis available'));
+        return;
+      }
 
       // Log technical analysis
       _addLog(TradeLog.info(
@@ -678,6 +868,22 @@ class TradingProvider extends ChangeNotifier {
       // Format qty to appropriate decimal places
       final qtyStr = qty.toStringAsFixed(stepDecimalPlaces);
 
+      // Determine actual TP/SL based on the effective mode (important for auto mode)
+      // Auto mode may have selected a different strategy than the user's original selection
+      double effectiveProfitPercent = _profitTargetPercent;
+      double effectiveStopLossPercent = _stopLossPercent;
+
+      if (_tradingMode == TradingMode.auto && _technicalAnalysis != null) {
+        // Auto mode: Use TP/SL based on the actual strategy that was selected
+        if (_technicalAnalysis!.mode == TradingMode.bollinger) {
+          effectiveProfitPercent = AppConstants.defaultBollingerProfitPercent;
+          effectiveStopLossPercent = AppConstants.defaultBollingerStopLossPercent;
+        } else {
+          effectiveProfitPercent = AppConstants.defaultEmaProfitPercent;
+          effectiveStopLossPercent = AppConstants.defaultEmaStopLossPercent;
+        }
+      }
+
       // Calculate TP/SL prices based on ROE targets
       // ROE% = (profit / margin) * 100
       // For Long: profit = (exitPrice - entryPrice) * qty
@@ -688,8 +894,8 @@ class TradingProvider extends ChangeNotifier {
 
       // Calculate TP/SL prices from ROE percentages
       // TP/SL price movement = (ROE% / 100) * (entryPrice / leverage)
-      final tpPriceMove = (_profitTargetPercent / 100) * (price / leverageInt);
-      final slPriceMove = (_stopLossPercent / 100) * (price / leverageInt);
+      final tpPriceMove = (effectiveProfitPercent / 100) * (price / leverageInt);
+      final slPriceMove = (effectiveStopLossPercent / 100) * (price / leverageInt);
 
       final tpPrice = isLong ? price + tpPriceMove : price - tpPriceMove;
       final slPrice = isLong ? price - slPriceMove : price + slPriceMove;
@@ -709,17 +915,20 @@ class TradingProvider extends ChangeNotifier {
       );
 
       final sideText = side == ApiConstants.orderSideBuy ? "Long" : "Short";
+      final modeText = _tradingMode == TradingMode.auto
+          ? '(Auto: ${_technicalAnalysis?.mode == TradingMode.bollinger ? "Bollinger" : "EMA"})'
+          : '';
       _addLog(TradeLog.info(
-        'Creating $sideText order: $qtyStr $_symbol (\$${_orderAmount.toStringAsFixed(2)} USDT @ \$${price.toStringAsFixed(2)})\n'
-        'TP: \$$tpPriceStr (${_profitTargetPercent.toStringAsFixed(1)}% ROE) | '
-        'SL: \$$slPriceStr (${_stopLossPercent.toStringAsFixed(1)}% ROE)',
+        'Creating $sideText order $modeText: $qtyStr $_symbol (\$${_orderAmount.toStringAsFixed(2)} USDT @ \$${price.toStringAsFixed(2)})\n'
+        'TP: \$$tpPriceStr (${effectiveProfitPercent.toStringAsFixed(1)}% ROE) | '
+        'SL: \$$slPriceStr (${effectiveStopLossPercent.toStringAsFixed(1)}% ROE)',
       ));
 
       final result = await _repository.createOrder(request: request);
 
       if (result.isSuccess) {
         _addLog(TradeLog.success(
-          '$sideText position opened with TP/SL orders',
+          '$sideText position opened with TP/SL orders $modeText',
         ));
       } else {
         _addLog(TradeLog.error(

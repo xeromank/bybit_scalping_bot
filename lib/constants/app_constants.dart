@@ -13,15 +13,55 @@ class AppConstants {
   // Default Trading Settings
   static const String defaultSymbol = 'ETHUSDT';
   static const double defaultOrderAmount = 50.0;
-  static const double defaultProfitTargetPercent = 1.5;
-  static const double defaultStopLossPercent = 0.8;
-  static const String defaultLeverage = '5';
+  static const String defaultLeverage = '10'; // Changed to 10x for both strategies
 
-  // Default RSI Settings (Conservative for volatile markets)
+  // ===== BOLLINGER BAND MODE SETTINGS =====
+
+  // Bollinger Band Settings
+  static const int defaultBollingerPeriod = 20;
+  static const double defaultBollingerStdDev = 2.0;
+  static const int minBollingerPeriod = 10;
+  static const int maxBollingerPeriod = 50;
+  static const double minBollingerStdDev = 1.0;
+  static const double maxBollingerStdDev = 3.0;
+
+  // Bollinger Mode: RSI 14 Settings
+  static const int defaultBollingerRsiPeriod = 14;
+  static const double defaultBollingerRsiOverbought = 70.0;
+  static const double defaultBollingerRsiOversold = 30.0;
+
+  // Bollinger Mode: Profit/Loss Targets
+  static const double defaultBollingerProfitPercent = 0.5;
+  static const double defaultBollingerStopLossPercent = 0.15;
+
+  // ===== EMA TREND MODE SETTINGS =====
+
+  // EMA Settings
+  static const int defaultEma9Period = 9;
+  static const int defaultEma21Period = 21;
+
+  // EMA Mode: RSI 6 + RSI 14 Settings
   static const double defaultRsi6LongThreshold = 25.0;
   static const double defaultRsi6ShortThreshold = 75.0;
-  static const double defaultRsi12LongThreshold = 40.0;
-  static const double defaultRsi12ShortThreshold = 60.0;
+  static const int defaultRsi14Period = 14; // Changed from RSI 12 to RSI 14
+  static const double defaultRsi14LongThreshold = 30.0;
+  static const double defaultRsi14ShortThreshold = 70.0;
+
+  // EMA Mode: Profit/Loss Targets
+  static const double defaultEmaProfitPercent = 0.7; // 0.6-0.8% range, using 0.7% as default
+  static const double defaultEmaStopLossPercent = 0.2;
+
+  // ===== COMMON SETTINGS (Both Modes) =====
+
+  // Volume Filter Settings
+  static const bool defaultUseVolumeFilter = true;
+  static const double defaultVolumeMultiplier = 1.5;
+  static const double minVolumeMultiplier = 1.0;
+  static const double maxVolumeMultiplier = 3.0;
+
+  // Chart Timeframes
+  static const String defaultMainInterval = '5'; // 5-minute main chart
+  static const String defaultTrendInterval = '15'; // 15-minute trend confirmation
 
   // Trading Limits
   static const double minOrderAmount = 40.0; // Minimum to ensure 0.01 qty for most symbols
@@ -36,11 +76,8 @@ class AppConstants {
   // RSI Limits
   static const double minRsiThreshold = 10.0;
   static const double maxRsiThreshold = 90.0;
-
-  // EMA Settings
-  static const bool defaultUseEmaFilter = true;
-  static const int defaultEmaPeriod = 9;
-  static const List<int> availableEmaPeriods = [9, 21, 50, 100, 200];
+  static const int minRsiPeriod = 5;
+  static const int maxRsiPeriod = 20;
 
   // Bot Settings
   static const Duration botMonitoringInterval = Duration(seconds: 3);

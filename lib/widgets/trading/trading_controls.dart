@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/trading_provider.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/widgets/common/loading_button.dart';
+import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
 
 /// Widget for trading bot controls
 ///
@@ -25,9 +26,8 @@ class _TradingControlsState extends State<TradingControls> {
   late TextEditingController _stopLossController;
   late TextEditingController _rsi6LongController;
   late TextEditingController _rsi6ShortController;
-  late TextEditingController _rsi12LongController;
-  late TextEditingController _rsi12ShortController;
-  late TextEditingController _emaPeriodController;
+  late TextEditingController _rsi14LongController;
+  late TextEditingController _rsi14ShortController;
 
   @override
   void initState() {
@@ -44,12 +44,10 @@ class _TradingControlsState extends State<TradingControls> {
         TextEditingController(text: provider.rsi6LongThreshold.toString());
     _rsi6ShortController =
         TextEditingController(text: provider.rsi6ShortThreshold.toString());
-    _rsi12LongController =
-        TextEditingController(text: provider.rsi12LongThreshold.toString());
-    _rsi12ShortController =
-        TextEditingController(text: provider.rsi12ShortThreshold.toString());
-    _emaPeriodController =
-        TextEditingController(text: provider.emaPeriod.toString());
+    _rsi14LongController =
+        TextEditingController(text: provider.rsi14LongThreshold.toString());
+    _rsi14ShortController =
+        TextEditingController(text: provider.rsi14ShortThreshold.toString());
   }
 
   @override
@@ -60,9 +58,8 @@ class _TradingControlsState extends State<TradingControls> {
     _stopLossController.dispose();
     _rsi6LongController.dispose();
     _rsi6ShortController.dispose();
-    _rsi12LongController.dispose();
-    _rsi12ShortController.dispose();
-    _emaPeriodController.dispose();
+    _rsi14LongController.dispose();
+    _rsi14ShortController.dispose();
     super.dispose();
   }
 
@@ -72,25 +69,12 @@ class _TradingControlsState extends State<TradingControls> {
       builder: (context, provider, child) {
         final isRunning = provider.isRunning;
 
-        // Update text fields when provider values change
+        // Update text fields when provider values change (only for TP/SL when mode changes)
         if (_profitController.text != provider.profitTargetPercent.toString()) {
           _profitController.text = provider.profitTargetPercent.toString();
         }
         if (_stopLossController.text != provider.stopLossPercent.toString()) {
           _stopLossController.text = provider.stopLossPercent.toString();
-        }
-        // Update RSI threshold text fields
-        if (_rsi6LongController.text != provider.rsi6LongThreshold.toString()) {
-          _rsi6LongController.text = provider.rsi6LongThreshold.toString();
-        }
-        if (_rsi6ShortController.text != provider.rsi6ShortThreshold.toString()) {
-          _rsi6ShortController.text = provider.rsi6ShortThreshold.toString();
-        }
-        if (_rsi12LongController.text != provider.rsi12LongThreshold.toString()) {
-          _rsi12LongController.text = provider.rsi12LongThreshold.toString();
-        }
-        if (_rsi12ShortController.text != provider.rsi12ShortThreshold.toString()) {
-          _rsi12ShortController.text = provider.rsi12ShortThreshold.toString();
         }
 
         return Padding(
@@ -98,6 +82,62 @@ class _TradingControlsState extends State<TradingControls> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Row 0: Trading Mode Selection
+              DropdownButtonFormField<TradingMode>(
+                value: provider.tradingMode,
+                decoration: ThemeConstants.inputDecoration(
+                  labelText: '전략 모드',
+                  prefixIcon: Icons.trending_up,
+                ),
+                items: const [
+                  DropdownMenuItem(
+                    value: TradingMode.auto,
+                    child: Text('자동 (AI 추천) ⭐'),
+                  ),
+                  DropdownMenuItem(
+                    value: TradingMode.bollinger,
+                    child: Text('볼린저 밴드 🎯'),
+                  ),
+                  DropdownMenuItem(
+                    value: TradingMode.ema,
+                    child: Text('EMA 추세추종 🚀'),
+                  ),
+                ],
+                onChanged: isRunning
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          provider.setTradingMode(value);
+                        }
+                      },
+              ),
+              const SizedBox(height: ThemeConstants.spacingSmall),
+
+              // Mode description
+              Container(
+                padding: const EdgeInsets.all(ThemeConstants.spacingSmall),
+                decoration: BoxDecoration(
+                  color: ThemeConstants.primaryColor.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
+                  border: Border.all(
+                    color: ThemeConstants.primaryColor.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Text(
+                  provider.tradingMode == TradingMode.auto
+                      ? '시장 상황 분석하여 최적 전략 자동 선택 (EMA 정렬, BB 폭, 변동성 기반)'
+                      : provider.tradingMode == TradingMode.bollinger
+                          ? '횡보장/박스권 최적 | 승률 75% | 익절 0.5% | 손절 0.15%'
+                          : '트렌드장 최적 | 승률 70% | 익절 0.7% | 손절 0.2%',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: ThemeConstants.textSecondaryColor,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: ThemeConstants.spacingSmall),
+
               // Row 1: Symbol with price
               Row(
                 children: [
@@ -295,14 +335,14 @@ class _TradingControlsState extends State<TradingControls> {
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
 
-              // Row 5: RSI(12) Thresholds
+              // Row 5: RSI(14) Thresholds
               Row(
                 children: [
                   Expanded(
                     child: TextField(
-                      controller: _rsi12LongController,
+                      controller: _rsi14LongController,
                       decoration: ThemeConstants.inputDecoration(
-                        labelText: 'RSI(12) 롱',
+                        labelText: 'RSI(14) 롱',
                         prefixIcon: Icons.arrow_upward,
                       ),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -313,7 +353,7 @@ class _TradingControlsState extends State<TradingControls> {
                       onChanged: (value) {
                         final threshold = double.tryParse(value);
                         if (threshold != null) {
-                          provider.setRsi12LongThreshold(threshold);
+                          provider.setRsi14LongThreshold(threshold);
                         }
                       },
                     ),
@@ -321,9 +361,9 @@ class _TradingControlsState extends State<TradingControls> {
                   const SizedBox(width: ThemeConstants.spacingSmall),
                   Expanded(
                     child: TextField(
-                      controller: _rsi12ShortController,
+                      controller: _rsi14ShortController,
                       decoration: ThemeConstants.inputDecoration(
-                        labelText: 'RSI(12) 숏',
+                        labelText: 'RSI(14) 숏',
                         prefixIcon: Icons.arrow_downward,
                       ),
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -334,61 +374,11 @@ class _TradingControlsState extends State<TradingControls> {
                       onChanged: (value) {
                         final threshold = double.tryParse(value);
                         if (threshold != null) {
-                          provider.setRsi12ShortThreshold(threshold);
+                          provider.setRsi14ShortThreshold(threshold);
                         }
                       },
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: ThemeConstants.spacingSmall),
-
-              // Row 6: EMA Filter Settings
-              Row(
-                children: [
-                  Expanded(
-                    child: SwitchListTile(
-                      title: const Text(
-                        'EMA 필터 사용',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: const Text(
-                        '추세 확인용 (OFF: RSI만 사용)',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      value: provider.useEmaFilter,
-                      onChanged: isRunning
-                          ? null
-                          : (value) {
-                              provider.setUseEmaFilter(value);
-                            },
-                      dense: true,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  ),
-                  if (provider.useEmaFilter) ...[
-                    const SizedBox(width: ThemeConstants.spacingSmall),
-                    Expanded(
-                      child: TextField(
-                        controller: _emaPeriodController,
-                        decoration: ThemeConstants.inputDecoration(
-                          labelText: 'EMA 기간',
-                          prefixIcon: Icons.show_chart,
-                        ),
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                        ],
-                        enabled: !isRunning,
-                        onChanged: (value) {
-                          final period = int.tryParse(value);
-                          if (period != null && period >= 1 && period <= 500) {
-                            provider.setEmaPeriod(period);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
                 ],
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
@@ -462,7 +452,7 @@ class _TradingControlsState extends State<TradingControls> {
                             _getRSIColor(provider.technicalAnalysis!.rsi6),
                           ),
                           _buildIndicator(
-                            'RSI(12)',
+                            'RSI(14)',
                             provider.technicalAnalysis!.rsi12.toStringAsFixed(1),
                             _getRSIColor(provider.technicalAnalysis!.rsi12),
                           ),
@@ -500,18 +490,44 @@ class _TradingControlsState extends State<TradingControls> {
                             '\$${provider.technicalAnalysis!.ema21.toStringAsFixed(1)}',
                             ThemeConstants.textPrimaryColor,
                           ),
-                          // Show selected EMA period if it's not 9 or 21
-                          if (provider.technicalAnalysis!.emaPeriod != 9 &&
-                              provider.technicalAnalysis!.emaPeriod != 21)
-                            _buildIndicator(
-                              'EMA(${provider.technicalAnalysis!.emaPeriod})',
-                              '\$${provider.technicalAnalysis!.selectedEma.toStringAsFixed(1)}',
-                              provider.useEmaFilter
-                                ? ThemeConstants.primaryColor
-                                : ThemeConstants.textSecondaryColor,
-                            ),
                         ],
                       ),
+                      // Fourth row: Bollinger Bands (only show in Bollinger mode)
+                      if (provider.technicalAnalysis!.mode == TradingMode.bollinger &&
+                          provider.technicalAnalysis!.bollingerBands != null) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildIndicator(
+                              'BB Upper',
+                              '\$${provider.technicalAnalysis!.bollingerBands!.upper.toStringAsFixed(1)}',
+                              Colors.red.shade700,
+                            ),
+                            _buildIndicator(
+                              'BB Lower',
+                              '\$${provider.technicalAnalysis!.bollingerBands!.lower.toStringAsFixed(1)}',
+                              Colors.green.shade700,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _buildIndicator(
+                              'BB RSI(14)',
+                              provider.technicalAnalysis!.bollingerRsi!.toStringAsFixed(1),
+                              _getRSIColor(provider.technicalAnalysis!.bollingerRsi!),
+                            ),
+                            _buildIndicator(
+                              'BB Middle',
+                              '\$${provider.technicalAnalysis!.bollingerBands!.middle.toStringAsFixed(1)}',
+                              ThemeConstants.textPrimaryColor,
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

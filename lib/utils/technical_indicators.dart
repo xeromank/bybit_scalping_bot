@@ -5,6 +5,66 @@
 /// This utility provides pure functions for calculating technical indicators
 /// commonly used in trading strategies.
 
+import 'dart:math' as math;
+
+/// Trading strategy mode
+enum TradingMode {
+  auto,       // Auto mode - selects best strategy based on market conditions
+  bollinger,  // Bollinger Band + RSI strategy (mean reversion)
+  ema,        // EMA crossover + RSI strategy (trend following)
+}
+
+/// Bollinger Bands values
+class BollingerBands {
+  final double upper;
+  final double middle;
+  final double lower;
+
+  BollingerBands({
+    required this.upper,
+    required this.middle,
+    required this.lower,
+  });
+
+  @override
+  String toString() {
+    return 'BB(upper: ${upper.toStringAsFixed(2)}, middle: ${middle.toStringAsFixed(2)}, lower: ${lower.toStringAsFixed(2)})';
+  }
+}
+
+/// Calculates Bollinger Bands
+///
+/// [prices] - List of prices (oldest first)
+/// [period] - Bollinger Band period (typically 20)
+/// [stdDev] - Number of standard deviations (typically 2.0)
+///
+/// Returns BollingerBands object with upper, middle, and lower bands
+BollingerBands calculateBollingerBands(List<double> prices, int period, double stdDev) {
+  if (prices.length < period) {
+    throw ArgumentError('Need at least $period price points for Bollinger Bands($period)');
+  }
+
+  // Calculate middle band (SMA)
+  final middle = calculateSMA(prices, period);
+
+  // Calculate standard deviation
+  final relevantPrices = prices.skip(prices.length - period).take(period).toList();
+  final variance = relevantPrices
+      .map((price) => (price - middle) * (price - middle))
+      .reduce((a, b) => a + b) / period;
+  final standardDeviation = math.sqrt(variance);
+
+  // Calculate upper and lower bands
+  final upper = middle + (stdDev * standardDeviation);
+  final lower = middle - (stdDev * standardDeviation);
+
+  return BollingerBands(
+    upper: upper,
+    middle: middle,
+    lower: lower,
+  );
+}
+
 /// Calculates RSI (Relative Strength Index)
 ///
 /// [closePrices] - List of closing prices (oldest first)
@@ -69,6 +129,48 @@ double calculateEMA(List<double> prices, int period) {
   return ema;
 }
 
+/// EMA Crossover detection types
+enum EmaCrossover {
+  bullish,  // Fast EMA crossed above slow EMA (golden cross)
+  bearish,  // Fast EMA crossed below slow EMA (death cross)
+  none,     // No crossover
+}
+
+/// Detects EMA crossover
+///
+/// [prices] - List of prices (oldest first), needs at least 2 candles for crossover detection
+/// [fastPeriod] - Fast EMA period (typically 9)
+/// [slowPeriod] - Slow EMA period (typically 21)
+///
+/// Returns EmaCrossover indicating bullish, bearish, or no crossover
+EmaCrossover detectEmaCrossover(List<double> prices, int fastPeriod, int slowPeriod) {
+  if (prices.length < slowPeriod + 1) {
+    throw ArgumentError('Need at least ${slowPeriod + 1} price points for EMA crossover detection');
+  }
+
+  // Calculate current EMAs
+  final fastEmaCurrent = calculateEMA(prices, fastPeriod);
+  final slowEmaCurrent = calculateEMA(prices, slowPeriod);
+
+  // Calculate previous EMAs (using prices excluding the last candle)
+  final pricesPrevious = prices.sublist(0, prices.length - 1);
+  final fastEmaPrevious = calculateEMA(pricesPrevious, fastPeriod);
+  final slowEmaPrevious = calculateEMA(pricesPrevious, slowPeriod);
+
+  // Detect crossover
+  // Bullish: fast was below or equal, now above
+  if (fastEmaPrevious <= slowEmaPrevious && fastEmaCurrent > slowEmaCurrent) {
+    return EmaCrossover.bullish;
+  }
+
+  // Bearish: fast was above or equal, now below
+  if (fastEmaPrevious >= slowEmaPrevious && fastEmaCurrent < slowEmaCurrent) {
+    return EmaCrossover.bearish;
+  }
+
+  return EmaCrossover.none;
+}
+
 /// Calculates SMA (Simple Moving Average)
 ///
 /// [prices] - List of prices (oldest first)
@@ -122,37 +224,50 @@ List<double> parseVolumes(Map<String, dynamic> klineResponse) {
   return volumes;
 }
 
-/// Technical analysis result
+/// Technical analysis result (supports both trading modes)
 class TechnicalAnalysis {
-  final double rsi6;
-  final double rsi12;
+  // Trading Mode
+  final TradingMode mode;
+
+  // Common indicators (both modes)
+  final double currentPrice;
+  final double currentVolume;
   final double volumeMA5;
   final double volumeMA10;
   final double ema9;
   final double ema21;
-  final double currentPrice;
-  final double currentVolume;
 
-  // RSI Thresholds (customizable)
+  // EMA Mode specific
+  final double rsi6;
+  final double rsi12;  // Actually RSI 14 in new design
   final double rsi6LongThreshold;
   final double rsi6ShortThreshold;
-  final double rsi12LongThreshold;
-  final double rsi12ShortThreshold;
-
-  // EMA Settings (customizable)
+  final double rsi12LongThreshold;  // Actually RSI 14 threshold
+  final double rsi12ShortThreshold;  // Actually RSI 14 threshold
   final bool useEmaFilter;
   final int emaPeriod;
-  final double selectedEma; // The EMA value for the selected period
+  final double selectedEma;
+  final EmaCrossover? emaCrossover;
+
+  // Bollinger Mode specific
+  final BollingerBands? bollingerBands;
+  final double? bollingerRsi;  // RSI 14 for Bollinger mode
+  final double? bollingerRsiOverbought;
+  final double? bollingerRsiOversold;
+  final bool? useVolumeFilter;
+  final double? volumeMultiplier;
 
   TechnicalAnalysis({
-    required this.rsi6,
-    required this.rsi12,
+    required this.mode,
+    required this.currentPrice,
+    required this.currentVolume,
     required this.volumeMA5,
     required this.volumeMA10,
     required this.ema9,
     required this.ema21,
-    required this.currentPrice,
-    required this.currentVolume,
+    // EMA mode parameters
+    required this.rsi6,
+    required this.rsi12,
     required this.rsi6LongThreshold,
     required this.rsi6ShortThreshold,
     required this.rsi12LongThreshold,
@@ -160,93 +275,221 @@ class TechnicalAnalysis {
     required this.useEmaFilter,
     required this.emaPeriod,
     required this.selectedEma,
+    this.emaCrossover,
+    // Bollinger mode parameters
+    this.bollingerBands,
+    this.bollingerRsi,
+    this.bollingerRsiOverbought,
+    this.bollingerRsiOversold,
+    this.useVolumeFilter,
+    this.volumeMultiplier,
   });
 
   /// Checks if long entry conditions are met
-  /// Conservative approach: stricter RSI thresholds and optional EMA trend confirmation
   bool get isLongSignal {
-    // RSI conditions (using custom thresholds):
-    // RSI(6) < rsi6LongThreshold (default: 25 - very oversold)
-    // AND RSI(12) < rsi12LongThreshold (default: 40 - mid-term confirmation)
-    final rsiCondition = rsi6 < rsi6LongThreshold && rsi12 < rsi12LongThreshold;
-
-    // Extreme RSI condition: Ignore EMA if RSI is extremely oversold (±5 from threshold)
-    final extremeRsiCondition = rsi6 < (rsi6LongThreshold - 5) && rsi12 < (rsi12LongThreshold - 5);
-
-    if (extremeRsiCondition) {
-      // Extremely oversold: Signal regardless of EMA
-      return true;
+    if (mode == TradingMode.bollinger) {
+      return _isBollingerLongSignal;
+    } else {
+      return _isEmaLongSignal;
     }
-
-    // EMA condition (optional):
-    // price > selectedEMA (uptrend confirmation)
-    if (useEmaFilter) {
-      return rsiCondition && currentPrice > selectedEma;
-    }
-
-    return rsiCondition;
   }
 
   /// Checks if short entry conditions are met
-  /// Conservative approach: stricter RSI thresholds and optional EMA trend confirmation
   bool get isShortSignal {
-    // RSI conditions (using custom thresholds):
-    // RSI(6) > rsi6ShortThreshold (default: 75 - very overbought)
-    // AND RSI(12) > rsi12ShortThreshold (default: 60 - mid-term confirmation)
-    final rsiCondition = rsi6 > rsi6ShortThreshold && rsi12 > rsi12ShortThreshold;
-
-    // Extreme RSI condition: Ignore EMA if RSI is extremely overbought (±5 from threshold)
-    final extremeRsiCondition = rsi6 > (rsi6ShortThreshold + 5) && rsi12 > (rsi12ShortThreshold + 5);
-
-    if (extremeRsiCondition) {
-      // Extremely overbought: Signal regardless of EMA
-      return true;
+    if (mode == TradingMode.bollinger) {
+      return _isBollingerShortSignal;
+    } else {
+      return _isEmaShortSignal;
     }
-
-    // EMA condition (optional):
-    // price < selectedEMA (downtrend confirmation)
-    if (useEmaFilter) {
-      return rsiCondition && currentPrice < selectedEma;
-    }
-
-    return rsiCondition;
   }
 
-  /// Checks if conditions are partially met for long (one RSI condition satisfied)
+  /// Checks if conditions are partially met for long
   bool get isLongPreparing {
-    if (isLongSignal) return false; // Already a full signal
+    if (mode == TradingMode.bollinger) {
+      return _isBollingerLongPreparing;
+    } else {
+      return _isEmaLongPreparing;
+    }
+  }
+
+  /// Checks if conditions are partially met for short
+  bool get isShortPreparing {
+    if (mode == TradingMode.bollinger) {
+      return _isBollingerShortPreparing;
+    } else {
+      return _isEmaShortPreparing;
+    }
+  }
+
+  // ===== BOLLINGER MODE LOGIC =====
+
+  /// Bollinger Band Long Entry:
+  /// 1. Price touches or breaks below lower band
+  /// 2. RSI(14) < oversold threshold (default: 30)
+  /// 3. Volume > avgVolume × multiplier (optional)
+  bool get _isBollingerLongSignal {
+    if (bollingerBands == null || bollingerRsi == null) return false;
+
+    // Price condition: at or below lower band
+    final priceBelowLowerBand = currentPrice <= bollingerBands!.lower;
+
+    // RSI condition
+    final rsiOversold = bollingerRsi! < (bollingerRsiOversold ?? 30.0);
+
+    // Volume condition (optional)
+    bool volumeOk = true;
+    if (useVolumeFilter ?? false) {
+      final volumeThreshold = volumeMA5 * (volumeMultiplier ?? 1.5);
+      volumeOk = currentVolume > volumeThreshold;
+    }
+
+    return priceBelowLowerBand && rsiOversold && volumeOk;
+  }
+
+  /// Bollinger Band Short Entry:
+  /// 1. Price touches or breaks above upper band
+  /// 2. RSI(14) > overbought threshold (default: 70)
+  /// 3. Volume > avgVolume × multiplier (optional)
+  bool get _isBollingerShortSignal {
+    if (bollingerBands == null || bollingerRsi == null) return false;
+
+    // Price condition: at or above upper band
+    final priceAboveUpperBand = currentPrice >= bollingerBands!.upper;
+
+    // RSI condition
+    final rsiOverbought = bollingerRsi! > (bollingerRsiOverbought ?? 70.0);
+
+    // Volume condition (optional)
+    bool volumeOk = true;
+    if (useVolumeFilter ?? false) {
+      final volumeThreshold = volumeMA5 * (volumeMultiplier ?? 1.5);
+      volumeOk = currentVolume > volumeThreshold;
+    }
+
+    return priceAboveUpperBand && rsiOverbought && volumeOk;
+  }
+
+  /// Bollinger Long Preparing: Price near lower band but not all conditions met
+  bool get _isBollingerLongPreparing {
+    if (isLongSignal || bollingerBands == null || bollingerRsi == null) return false;
+
+    // Price is approaching lower band (within 0.5% distance)
+    final distanceToLowerBand = (currentPrice - bollingerBands!.lower) / bollingerBands!.lower;
+    final nearLowerBand = distanceToLowerBand < 0.005; // Within 0.5%
+
+    // RSI is getting oversold (within 10 points of threshold)
+    final rsiApproachingOversold = bollingerRsi! < (bollingerRsiOversold ?? 30.0) + 10;
+
+    return nearLowerBand || rsiApproachingOversold;
+  }
+
+  /// Bollinger Short Preparing: Price near upper band but not all conditions met
+  bool get _isBollingerShortPreparing {
+    if (isShortSignal || bollingerBands == null || bollingerRsi == null) return false;
+
+    // Price is approaching upper band (within 0.5% distance)
+    final distanceToUpperBand = (bollingerBands!.upper - currentPrice) / bollingerBands!.upper;
+    final nearUpperBand = distanceToUpperBand < 0.005; // Within 0.5%
+
+    // RSI is getting overbought (within 10 points of threshold)
+    final rsiApproachingOverbought = bollingerRsi! > (bollingerRsiOverbought ?? 70.0) - 10;
+
+    return nearUpperBand || rsiApproachingOverbought;
+  }
+
+  // ===== EMA MODE LOGIC =====
+
+  /// EMA Trend Long Entry:
+  /// 1. EMA(9) crosses above EMA(21) OR already in uptrend
+  /// 2. RSI(6) < long threshold (default: 25)
+  /// 3. RSI(14) < long threshold (default: 40)
+  /// 4. Volume > avgVolume × 1.5 (optional)
+  bool get _isEmaLongSignal {
+    // RSI conditions
+    final rsiCondition = rsi6 < rsi6LongThreshold && rsi12 < rsi12LongThreshold;
+
+    // Extreme RSI: Ignore other conditions if RSI is extremely oversold
+    final extremeRsiCondition = rsi6 < (rsi6LongThreshold - 5) && rsi12 < (rsi12LongThreshold - 5);
+    if (extremeRsiCondition) return true;
+
+    // EMA trend condition: Bullish crossover or price above EMA
+    bool trendOk = true;
+    if (useEmaFilter) {
+      // Check for bullish crossover
+      final hasBullishCrossover = emaCrossover == EmaCrossover.bullish;
+      // OR price is above selected EMA (uptrend confirmation)
+      final priceAboveEma = currentPrice > selectedEma;
+      trendOk = hasBullishCrossover || priceAboveEma;
+    }
+
+    // Volume condition (optional - always enabled in EMA mode)
+    final volumeThreshold = volumeMA5 * 1.5;
+    final volumeOk = currentVolume > volumeThreshold;
+
+    return rsiCondition && trendOk && volumeOk;
+  }
+
+  /// EMA Trend Short Entry:
+  /// 1. EMA(9) crosses below EMA(21) OR already in downtrend
+  /// 2. RSI(6) > short threshold (default: 75)
+  /// 3. RSI(14) > short threshold (default: 60)
+  /// 4. Volume > avgVolume × 1.5 (optional)
+  bool get _isEmaShortSignal {
+    // RSI conditions
+    final rsiCondition = rsi6 > rsi6ShortThreshold && rsi12 > rsi12ShortThreshold;
+
+    // Extreme RSI: Ignore other conditions if RSI is extremely overbought
+    final extremeRsiCondition = rsi6 > (rsi6ShortThreshold + 5) && rsi12 > (rsi12ShortThreshold + 5);
+    if (extremeRsiCondition) return true;
+
+    // EMA trend condition: Bearish crossover or price below EMA
+    bool trendOk = true;
+    if (useEmaFilter) {
+      // Check for bearish crossover
+      final hasBearishCrossover = emaCrossover == EmaCrossover.bearish;
+      // OR price is below selected EMA (downtrend confirmation)
+      final priceBelowEma = currentPrice < selectedEma;
+      trendOk = hasBearishCrossover || priceBelowEma;
+    }
+
+    // Volume condition (optional - always enabled in EMA mode)
+    final volumeThreshold = volumeMA5 * 1.5;
+    final volumeOk = currentVolume > volumeThreshold;
+
+    return rsiCondition && trendOk && volumeOk;
+  }
+
+  /// EMA Long Preparing: One or more conditions partially met
+  bool get _isEmaLongPreparing {
+    if (isLongSignal) return false;
+
     final rsi6Ok = rsi6 < rsi6LongThreshold;
     final rsi12Ok = rsi12 < rsi12LongThreshold;
 
-    // At least one RSI condition
     if (!rsi6Ok && !rsi12Ok) return false;
 
-    // If EMA filter is on, check trend condition
     if (useEmaFilter) {
       final trendOk = currentPrice > selectedEma;
       return trendOk && (rsi6Ok || rsi12Ok);
     }
 
-    // Without EMA filter, just need one RSI condition
     return rsi6Ok || rsi12Ok;
   }
 
-  /// Checks if conditions are partially met for short (one RSI condition satisfied)
-  bool get isShortPreparing {
-    if (isShortSignal) return false; // Already a full signal
+  /// EMA Short Preparing: One or more conditions partially met
+  bool get _isEmaShortPreparing {
+    if (isShortSignal) return false;
+
     final rsi6Ok = rsi6 > rsi6ShortThreshold;
     final rsi12Ok = rsi12 > rsi12ShortThreshold;
 
-    // At least one RSI condition
     if (!rsi6Ok && !rsi12Ok) return false;
 
-    // If EMA filter is on, check trend condition
     if (useEmaFilter) {
       final trendOk = currentPrice < selectedEma;
       return trendOk && (rsi6Ok || rsi12Ok);
     }
 
-    // Without EMA filter, just need one RSI condition
     return rsi6Ok || rsi12Ok;
   }
 
@@ -261,29 +504,134 @@ class TechnicalAnalysis {
 
   @override
   String toString() {
-    // Calculate volume ratio vs MA5 for monitoring
     final volumeRatio = (currentVolume / volumeMA5 * 100).toStringAsFixed(1);
 
-    return 'Technical Analysis:\n'
-        '  Price: \$$currentPrice\n'
-        '  RSI(6): ${rsi6.toStringAsFixed(2)} | RSI(12): ${rsi12.toStringAsFixed(2)}\n'
-        '  EMA(9): \$${ema9.toStringAsFixed(2)} | EMA(21): \$${ema21.toStringAsFixed(2)}\n'
-        '  Volume: ${currentVolume.toStringAsFixed(0)} ($volumeRatio% of MA5)\n'
-        '  Volume MA(5): ${volumeMA5.toStringAsFixed(0)} | MA(10): ${volumeMA10.toStringAsFixed(0)}\n'
-        '  Status: $signalStatus';
+    if (mode == TradingMode.bollinger) {
+      return 'Technical Analysis (Bollinger Mode):\n'
+          '  Price: \$$currentPrice\n'
+          '  BB: Upper=\$${bollingerBands?.upper.toStringAsFixed(2)}, '
+          'Middle=\$${bollingerBands?.middle.toStringAsFixed(2)}, '
+          'Lower=\$${bollingerBands?.lower.toStringAsFixed(2)}\n'
+          '  RSI(14): ${bollingerRsi?.toStringAsFixed(2)}\n'
+          '  Volume: ${currentVolume.toStringAsFixed(0)} ($volumeRatio% of MA5)\n'
+          '  Status: $signalStatus';
+    } else {
+      return 'Technical Analysis (EMA Mode):\n'
+          '  Price: \$$currentPrice\n'
+          '  RSI(6): ${rsi6.toStringAsFixed(2)} | RSI(14): ${rsi12.toStringAsFixed(2)}\n'
+          '  EMA(9): \$${ema9.toStringAsFixed(2)} | EMA(21): \$${ema21.toStringAsFixed(2)}\n'
+          '  Volume: ${currentVolume.toStringAsFixed(0)} ($volumeRatio% of MA5)\n'
+          '  Status: $signalStatus';
+    }
+  }
+}
+
+/// Auto-selects optimal trading mode based on market conditions
+///
+/// Returns 'bollinger' for ranging markets, 'ema' for trending markets
+TradingMode selectOptimalMode(List<double> closePrices) {
+  if (closePrices.length < 50) {
+    // Not enough data, default to bollinger (safer for ranging markets)
+    return TradingMode.bollinger;
+  }
+
+  int trendScore = 0;
+
+  // 1. EMA Alignment Check (max 3 points)
+  final ema9 = calculateEMA(closePrices, 9);
+  final ema21 = calculateEMA(closePrices, 21);
+  final ema50 = calculateEMA(closePrices, 50);
+
+  // Perfect uptrend or downtrend alignment
+  if ((ema9 > ema21 && ema21 > ema50) || (ema9 < ema21 && ema21 < ema50)) {
+    trendScore += 3;
+  }
+  // Partial alignment
+  else if (ema9 > ema21 || ema9 < ema21) {
+    trendScore += 1;
+  }
+
+  // 2. Bollinger Band Width (max 3 points)
+  final bollingerBands = calculateBollingerBands(closePrices, 20, 2.0);
+  final bbWidth = (bollingerBands.upper - bollingerBands.lower) / bollingerBands.middle;
+
+  // Calculate average BB width over last 20 candles
+  double totalBBWidth = 0;
+  int widthSamples = 0;
+  for (int i = math.max(0, closePrices.length - 20); i < closePrices.length; i++) {
+    final historicalPrices = closePrices.sublist(0, i + 1);
+    if (historicalPrices.length >= 20) {
+      final bb = calculateBollingerBands(historicalPrices, 20, 2.0);
+      totalBBWidth += (bb.upper - bb.lower) / bb.middle;
+      widthSamples++;
+    }
+  }
+  final avgBBWidth = widthSamples > 0 ? totalBBWidth / widthSamples : bbWidth;
+
+  // Wide band = high volatility = trending
+  if (bbWidth > avgBBWidth * 1.5) {
+    trendScore += 3;
+  } else if (bbWidth > avgBBWidth * 1.2) {
+    trendScore += 2;
+  } else if (bbWidth < avgBBWidth * 0.8) {
+    trendScore += 0;  // Narrow band = low volatility = ranging
+  } else {
+    trendScore += 1;
+  }
+
+  // 3. Price Distance from EMA 50 (max 2 points)
+  final currentPrice = closePrices.last;
+  final distanceFromEma50 = (currentPrice - ema50).abs() / ema50;
+
+  if (distanceFromEma50 > 0.02) {  // 2% or more distance
+    trendScore += 2;  // Strong trend
+  } else if (distanceFromEma50 > 0.01) {  // 1-2% distance
+    trendScore += 1;
+  }
+
+  // 4. Recent Price Movement (max 2 points)
+  if (closePrices.length >= 10) {
+    final recentPrices = closePrices.sublist(closePrices.length - 10);
+    final priceChange = (recentPrices.last - recentPrices.first).abs() / recentPrices.first;
+
+    if (priceChange > 0.015) {  // 1.5% move in 10 candles
+      trendScore += 2;
+    } else if (priceChange > 0.01) {  // 1% move
+      trendScore += 1;
+    }
+  }
+
+  // Decision: 7+ = strong trend (EMA), 5-6 = medium trend (EMA), 0-4 = ranging (Bollinger)
+  if (trendScore >= 7) {
+    return TradingMode.ema;  // Strong trend
+  } else if (trendScore >= 5) {
+    return TradingMode.ema;  // Medium trend
+  } else {
+    return TradingMode.bollinger;  // Ranging or weak trend
   }
 }
 
 /// Analyzes price and volume data and returns technical indicators
+/// Supports Auto, Bollinger Band, and EMA trading modes
 TechnicalAnalysis analyzePriceData(
   List<double> closePrices,
   List<double> volumes, {
-  required double rsi6LongThreshold,
-  required double rsi6ShortThreshold,
-  required double rsi12LongThreshold,
-  required double rsi12ShortThreshold,
-  required bool useEmaFilter,
-  required int emaPeriod,
+  required TradingMode mode,
+  // Bollinger mode parameters
+  int? bollingerPeriod,
+  double? bollingerStdDev,
+  int? bollingerRsiPeriod,
+  double? bollingerRsiOverbought,
+  double? bollingerRsiOversold,
+  bool? useVolumeFilter,
+  double? volumeMultiplier,
+  // EMA mode parameters
+  double? rsi6LongThreshold,
+  double? rsi6ShortThreshold,
+  double? rsi12LongThreshold,
+  double? rsi12ShortThreshold,
+  bool? useEmaFilter,
+  int? emaPeriod,
 }) {
   if (closePrices.length < 30) {
     throw ArgumentError('Need at least 30 price points for analysis');
@@ -292,8 +640,14 @@ TechnicalAnalysis analyzePriceData(
     throw ArgumentError('Need at least 30 volume points for analysis');
   }
 
-  final rsi6 = calculateRSI(closePrices, 6);
-  final rsi12 = calculateRSI(closePrices, 12);
+  // Auto mode: Select optimal strategy based on market conditions
+  TradingMode effectiveMode = mode;
+  if (mode == TradingMode.auto) {
+    effectiveMode = selectOptimalMode(closePrices);
+    print('Auto mode selected: ${effectiveMode == TradingMode.bollinger ? "Bollinger (Ranging Market)" : "EMA (Trending Market)"}');
+  }
+
+  // Common indicators for both modes
   final volumeMA5 = calculateSMA(volumes, 5);
   final volumeMA10 = calculateSMA(volumes, 10);
   final ema9 = calculateEMA(closePrices, 9);
@@ -301,32 +655,82 @@ TechnicalAnalysis analyzePriceData(
   final currentPrice = closePrices.last;
   final currentVolume = volumes.last;
 
-  // Calculate selected EMA based on period
-  double selectedEma;
-  if (emaPeriod == 9) {
-    selectedEma = ema9;
-  } else if (emaPeriod == 21) {
-    selectedEma = ema21;
-  } else {
-    // Calculate custom EMA for any period (1-500)
-    selectedEma = calculateEMA(closePrices, emaPeriod);
-  }
+  if (effectiveMode == TradingMode.bollinger) {
+    // Bollinger Band Mode
+    final bbPeriod = bollingerPeriod ?? 20;
+    final bbStdDev = bollingerStdDev ?? 2.0;
+    final bollingerBands = calculateBollingerBands(closePrices, bbPeriod, bbStdDev);
 
-  return TechnicalAnalysis(
-    rsi6: rsi6,
-    rsi12: rsi12,
-    volumeMA5: volumeMA5,
-    volumeMA10: volumeMA10,
-    ema9: ema9,
-    ema21: ema21,
-    currentPrice: currentPrice,
-    currentVolume: currentVolume,
-    rsi6LongThreshold: rsi6LongThreshold,
-    rsi6ShortThreshold: rsi6ShortThreshold,
-    rsi12LongThreshold: rsi12LongThreshold,
-    rsi12ShortThreshold: rsi12ShortThreshold,
-    useEmaFilter: useEmaFilter,
-    emaPeriod: emaPeriod,
-    selectedEma: selectedEma,
-  );
+    final rsiPeriod = bollingerRsiPeriod ?? 14;
+    final bollingerRsi = calculateRSI(closePrices, rsiPeriod);
+
+    // Also calculate RSI(6) and RSI(14) for display purposes
+    final rsi6 = calculateRSI(closePrices, 6);
+    final rsi12 = calculateRSI(closePrices, 14);  // Actually RSI 14
+
+    return TechnicalAnalysis(
+      mode: effectiveMode,  // Use effective mode (auto-selected or original)
+      currentPrice: currentPrice,
+      currentVolume: currentVolume,
+      volumeMA5: volumeMA5,
+      volumeMA10: volumeMA10,
+      ema9: ema9,
+      ema21: ema21,
+      // EMA mode parameters (calculate for display even in Bollinger mode)
+      rsi6: rsi6,
+      rsi12: rsi12,
+      rsi6LongThreshold: rsi6LongThreshold ?? 25.0,
+      rsi6ShortThreshold: rsi6ShortThreshold ?? 75.0,
+      rsi12LongThreshold: rsi12LongThreshold ?? 40.0,
+      rsi12ShortThreshold: rsi12ShortThreshold ?? 60.0,
+      useEmaFilter: false,
+      emaPeriod: 21,
+      selectedEma: ema21,
+      // Bollinger mode parameters
+      bollingerBands: bollingerBands,
+      bollingerRsi: bollingerRsi,
+      bollingerRsiOverbought: bollingerRsiOverbought ?? 70.0,
+      bollingerRsiOversold: bollingerRsiOversold ?? 30.0,
+      useVolumeFilter: useVolumeFilter ?? true,
+      volumeMultiplier: volumeMultiplier ?? 1.5,
+    );
+  } else {
+    // EMA Mode
+    final rsi6 = calculateRSI(closePrices, 6);
+    final rsi12 = calculateRSI(closePrices, 14);  // Actually RSI 14
+
+    final emaPer = emaPeriod ?? 21;
+    double selectedEma;
+    if (emaPer == 9) {
+      selectedEma = ema9;
+    } else if (emaPer == 21) {
+      selectedEma = ema21;
+    } else {
+      selectedEma = calculateEMA(closePrices, emaPer);
+    }
+
+    // Detect EMA crossover
+    final emaCrossover = detectEmaCrossover(closePrices, 9, 21);
+
+    return TechnicalAnalysis(
+      mode: effectiveMode,  // Use effective mode (auto-selected or original)
+      currentPrice: currentPrice,
+      currentVolume: currentVolume,
+      volumeMA5: volumeMA5,
+      volumeMA10: volumeMA10,
+      ema9: ema9,
+      ema21: ema21,
+      // EMA mode parameters
+      rsi6: rsi6,
+      rsi12: rsi12,
+      rsi6LongThreshold: rsi6LongThreshold ?? 25.0,
+      rsi6ShortThreshold: rsi6ShortThreshold ?? 75.0,
+      rsi12LongThreshold: rsi12LongThreshold ?? 40.0,
+      rsi12ShortThreshold: rsi12ShortThreshold ?? 60.0,
+      useEmaFilter: useEmaFilter ?? false,
+      emaPeriod: emaPer,
+      selectedEma: selectedEma,
+      emaCrossover: emaCrossover,
+    );
+  }
 }

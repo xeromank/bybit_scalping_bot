@@ -15,7 +15,8 @@
       "Bash(nc:*)",
       "Bash(flutter clean:*)",
       "Bash(pkill:*)",
-      "Bash(r)"
+      "Bash(r)",
+      "Bash(git restore:*)"
     ],
     "deny": [],
     "ask": []
