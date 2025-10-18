@@ -58,6 +58,10 @@ dependencies:
   # Background execution
   flutter_foreground_task: ^8.0.0
 
+  # Vibration and sound notifications
+  vibration: ^1.8.4
+  audioplayers: ^6.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

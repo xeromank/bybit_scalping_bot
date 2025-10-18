@@ -37,6 +37,11 @@ class AppConstants {
   static const double minRsiThreshold = 10.0;
   static const double maxRsiThreshold = 90.0;
 
+  // EMA Settings
+  static const bool defaultUseEmaFilter = true;
+  static const int defaultEmaPeriod = 9;
+  static const List<int> availableEmaPeriods = [9, 21, 50, 100, 200];
+
   // Bot Settings
   static const Duration botMonitoringInterval = Duration(seconds: 3);
   static const int maxLogEntries = 100;

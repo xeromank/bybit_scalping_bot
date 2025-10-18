@@ -27,6 +27,7 @@ class _TradingControlsState extends State<TradingControls> {
   late TextEditingController _rsi6ShortController;
   late TextEditingController _rsi12LongController;
   late TextEditingController _rsi12ShortController;
+  late TextEditingController _emaPeriodController;
 
   @override
   void initState() {
@@ -47,6 +48,8 @@ class _TradingControlsState extends State<TradingControls> {
         TextEditingController(text: provider.rsi12LongThreshold.toString());
     _rsi12ShortController =
         TextEditingController(text: provider.rsi12ShortThreshold.toString());
+    _emaPeriodController =
+        TextEditingController(text: provider.emaPeriod.toString());
   }
 
   @override
@@ -59,6 +62,7 @@ class _TradingControlsState extends State<TradingControls> {
     _rsi6ShortController.dispose();
     _rsi12LongController.dispose();
     _rsi12ShortController.dispose();
+    _emaPeriodController.dispose();
     super.dispose();
   }
 
@@ -74,6 +78,19 @@ class _TradingControlsState extends State<TradingControls> {
         }
         if (_stopLossController.text != provider.stopLossPercent.toString()) {
           _stopLossController.text = provider.stopLossPercent.toString();
+        }
+        // Update RSI threshold text fields
+        if (_rsi6LongController.text != provider.rsi6LongThreshold.toString()) {
+          _rsi6LongController.text = provider.rsi6LongThreshold.toString();
+        }
+        if (_rsi6ShortController.text != provider.rsi6ShortThreshold.toString()) {
+          _rsi6ShortController.text = provider.rsi6ShortThreshold.toString();
+        }
+        if (_rsi12LongController.text != provider.rsi12LongThreshold.toString()) {
+          _rsi12LongController.text = provider.rsi12LongThreshold.toString();
+        }
+        if (_rsi12ShortController.text != provider.rsi12ShortThreshold.toString()) {
+          _rsi12ShortController.text = provider.rsi12ShortThreshold.toString();
         }
 
         return Padding(
@@ -326,6 +343,92 @@ class _TradingControlsState extends State<TradingControls> {
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
 
+              // Row 6: EMA Filter Settings
+              Row(
+                children: [
+                  Expanded(
+                    child: SwitchListTile(
+                      title: const Text(
+                        'EMA 필터 사용',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      subtitle: const Text(
+                        '추세 확인용 (OFF: RSI만 사용)',
+                        style: TextStyle(fontSize: 11),
+                      ),
+                      value: provider.useEmaFilter,
+                      onChanged: isRunning
+                          ? null
+                          : (value) {
+                              provider.setUseEmaFilter(value);
+                            },
+                      dense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                  if (provider.useEmaFilter) ...[
+                    const SizedBox(width: ThemeConstants.spacingSmall),
+                    Expanded(
+                      child: TextField(
+                        controller: _emaPeriodController,
+                        decoration: ThemeConstants.inputDecoration(
+                          labelText: 'EMA 기간',
+                          prefixIcon: Icons.show_chart,
+                        ),
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        enabled: !isRunning,
+                        onChanged: (value) {
+                          final period = int.tryParse(value);
+                          if (period != null && period >= 1 && period <= 500) {
+                            provider.setEmaPeriod(period);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: ThemeConstants.spacingSmall),
+
+              // Current Price Display
+              if (provider.currentPrice != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ThemeConstants.spacingSmall,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: ThemeConstants.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        '현재가: ',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: ThemeConstants.textSecondaryColor,
+                        ),
+                      ),
+                      Text(
+                        '\$${provider.currentPrice!.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: ThemeConstants.primaryColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: ThemeConstants.spacingSmall),
+              ],
+
               // Technical Indicators Display
               if (provider.technicalAnalysis != null) ...[
                 Container(
@@ -366,7 +469,7 @@ class _TradingControlsState extends State<TradingControls> {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      // Second row: Volume MA and EMA indicators
+                      // Second row: Volume MA indicators
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceAround,
                         children: [
@@ -380,6 +483,13 @@ class _TradingControlsState extends State<TradingControls> {
                             '${(provider.technicalAnalysis!.volumeMA10 / 1000).toStringAsFixed(1)}k',
                             ThemeConstants.textPrimaryColor,
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Third row: EMA indicators (always show EMA9 and EMA21)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
                           _buildIndicator(
                             'EMA(9)',
                             '\$${provider.technicalAnalysis!.ema9.toStringAsFixed(1)}',
@@ -390,6 +500,16 @@ class _TradingControlsState extends State<TradingControls> {
                             '\$${provider.technicalAnalysis!.ema21.toStringAsFixed(1)}',
                             ThemeConstants.textPrimaryColor,
                           ),
+                          // Show selected EMA period if it's not 9 or 21
+                          if (provider.technicalAnalysis!.emaPeriod != 9 &&
+                              provider.technicalAnalysis!.emaPeriod != 21)
+                            _buildIndicator(
+                              'EMA(${provider.technicalAnalysis!.emaPeriod})',
+                              '\$${provider.technicalAnalysis!.selectedEma.toStringAsFixed(1)}',
+                              provider.useEmaFilter
+                                ? ThemeConstants.primaryColor
+                                : ThemeConstants.textSecondaryColor,
+                            ),
                         ],
                       ),
                     ],

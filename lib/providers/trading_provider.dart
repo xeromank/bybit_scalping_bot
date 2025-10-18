@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:vibration/vibration.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/models/position.dart';
 import 'package:bybit_scalping_bot/models/order.dart';
@@ -13,6 +15,14 @@ import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
 import 'package:bybit_scalping_bot/constants/api_constants.dart';
 import 'package:bybit_scalping_bot/constants/app_constants.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
+import 'package:bybit_scalping_bot/utils/notification_helper.dart';
+
+/// Trading signal status
+enum TradingStatus {
+  noSignal,  // No trading conditions met
+  ready,     // At least one indicator condition met
+  ordered,   // Order has been placed
+}
 
 /// Provider for trading operations and bot state
 ///
@@ -37,6 +47,10 @@ class TradingProvider extends ChangeNotifier {
   double _rsi12LongThreshold = AppConstants.defaultRsi12LongThreshold;
   double _rsi12ShortThreshold = AppConstants.defaultRsi12ShortThreshold;
 
+  // EMA Settings (configurable by user)
+  bool _useEmaFilter = AppConstants.defaultUseEmaFilter;
+  int _emaPeriod = AppConstants.defaultEmaPeriod;
+
   // State
   bool _isRunning = false;
   Position? _currentPosition;
@@ -46,6 +60,8 @@ class TradingProvider extends ChangeNotifier {
   final List<double> _realtimeClosePrices = [];
   double? _currentPrice; // Current price for selected symbol
   TechnicalAnalysis? _technicalAnalysis; // Technical indicators
+  TradingStatus _tradingStatus = TradingStatus.noSignal; // Current trading status
+  DateTime? _lastStatusUpdate; // Last status update time
 
   TradingProvider({
     required BybitRepository repository,
@@ -74,12 +90,18 @@ class TradingProvider extends ChangeNotifier {
   List<TradeLog> get logs => List.unmodifiable(_logs);
   double? get currentPrice => _currentPrice;
   TechnicalAnalysis? get technicalAnalysis => _technicalAnalysis;
+  TradingStatus get tradingStatus => _tradingStatus;
+  DateTime? get lastStatusUpdate => _lastStatusUpdate;
 
   // RSI Threshold Getters
   double get rsi6LongThreshold => _rsi6LongThreshold;
   double get rsi6ShortThreshold => _rsi6ShortThreshold;
   double get rsi12LongThreshold => _rsi12LongThreshold;
   double get rsi12ShortThreshold => _rsi12ShortThreshold;
+
+  // EMA Settings Getters
+  bool get useEmaFilter => _useEmaFilter;
+  int get emaPeriod => _emaPeriod;
 
   // Setters with validation
   Future<void> setSymbol(String value) async {
@@ -185,6 +207,37 @@ class TradingProvider extends ChangeNotifier {
         value >= AppConstants.minRsiThreshold &&
         value <= AppConstants.maxRsiThreshold) {
       _rsi12ShortThreshold = value;
+      notifyListeners();
+    }
+  }
+
+  // EMA Settings Setters
+  void setUseEmaFilter(bool value) {
+    if (!_isRunning) {
+      _useEmaFilter = value;
+
+      // Auto-adjust RSI thresholds based on EMA filter
+      if (_useEmaFilter) {
+        // EMA filter ON: More conservative (75/25)
+        _rsi6LongThreshold = 25.0;
+        _rsi6ShortThreshold = 75.0;
+        _rsi12LongThreshold = 40.0;
+        _rsi12ShortThreshold = 60.0;
+      } else {
+        // EMA filter OFF: Less conservative (80/20)
+        _rsi6LongThreshold = 20.0;
+        _rsi6ShortThreshold = 80.0;
+        _rsi12LongThreshold = 35.0;
+        _rsi12ShortThreshold = 65.0;
+      }
+
+      notifyListeners();
+    }
+  }
+
+  void setEmaPeriod(int value) {
+    if (!_isRunning && value >= 1 && value <= 500) {
+      _emaPeriod = value;
       notifyListeners();
     }
   }
@@ -514,7 +567,7 @@ class TradingProvider extends ChangeNotifier {
       volumes = parseVolumes(klineResponse);
       print('TradingProvider: Using ${closePrices.length} kline candles with volume data');
 
-      // Analyze technical indicators with custom RSI thresholds
+      // Analyze technical indicators with custom RSI thresholds and EMA settings
       final analysis = analyzePriceData(
         closePrices,
         volumes,
@@ -522,6 +575,8 @@ class TradingProvider extends ChangeNotifier {
         rsi6ShortThreshold: _rsi6ShortThreshold,
         rsi12LongThreshold: _rsi12LongThreshold,
         rsi12ShortThreshold: _rsi12ShortThreshold,
+        useEmaFilter: _useEmaFilter,
+        emaPeriod: _emaPeriod,
       );
 
       // Store technical analysis for UI display

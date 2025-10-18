@@ -139,6 +139,11 @@ class TechnicalAnalysis {
   final double rsi12LongThreshold;
   final double rsi12ShortThreshold;
 
+  // EMA Settings (customizable)
+  final bool useEmaFilter;
+  final int emaPeriod;
+  final double selectedEma; // The EMA value for the selected period
+
   TechnicalAnalysis({
     required this.rsi6,
     required this.rsi12,
@@ -152,30 +157,59 @@ class TechnicalAnalysis {
     required this.rsi6ShortThreshold,
     required this.rsi12LongThreshold,
     required this.rsi12ShortThreshold,
+    required this.useEmaFilter,
+    required this.emaPeriod,
+    required this.selectedEma,
   });
 
   /// Checks if long entry conditions are met
-  /// Conservative approach: stricter RSI thresholds and trend confirmation
+  /// Conservative approach: stricter RSI thresholds and optional EMA trend confirmation
   bool get isLongSignal {
-    // Conservative RSI conditions (using custom thresholds):
+    // RSI conditions (using custom thresholds):
     // RSI(6) < rsi6LongThreshold (default: 25 - very oversold)
     // AND RSI(12) < rsi12LongThreshold (default: 40 - mid-term confirmation)
-    // AND price > EMA(21) (uptrend confirmation)
-    return rsi6 < rsi6LongThreshold &&
-        rsi12 < rsi12LongThreshold &&
-        currentPrice > ema21;
+    final rsiCondition = rsi6 < rsi6LongThreshold && rsi12 < rsi12LongThreshold;
+
+    // Extreme RSI condition: Ignore EMA if RSI is extremely oversold (±5 from threshold)
+    final extremeRsiCondition = rsi6 < (rsi6LongThreshold - 5) && rsi12 < (rsi12LongThreshold - 5);
+
+    if (extremeRsiCondition) {
+      // Extremely oversold: Signal regardless of EMA
+      return true;
+    }
+
+    // EMA condition (optional):
+    // price > selectedEMA (uptrend confirmation)
+    if (useEmaFilter) {
+      return rsiCondition && currentPrice > selectedEma;
+    }
+
+    return rsiCondition;
   }
 
   /// Checks if short entry conditions are met
-  /// Conservative approach: stricter RSI thresholds and trend confirmation
+  /// Conservative approach: stricter RSI thresholds and optional EMA trend confirmation
   bool get isShortSignal {
-    // Conservative RSI conditions (using custom thresholds):
+    // RSI conditions (using custom thresholds):
     // RSI(6) > rsi6ShortThreshold (default: 75 - very overbought)
     // AND RSI(12) > rsi12ShortThreshold (default: 60 - mid-term confirmation)
-    // AND price < EMA(21) (downtrend confirmation)
-    return rsi6 > rsi6ShortThreshold &&
-        rsi12 > rsi12ShortThreshold &&
-        currentPrice < ema21;
+    final rsiCondition = rsi6 > rsi6ShortThreshold && rsi12 > rsi12ShortThreshold;
+
+    // Extreme RSI condition: Ignore EMA if RSI is extremely overbought (±5 from threshold)
+    final extremeRsiCondition = rsi6 > (rsi6ShortThreshold + 5) && rsi12 > (rsi12ShortThreshold + 5);
+
+    if (extremeRsiCondition) {
+      // Extremely overbought: Signal regardless of EMA
+      return true;
+    }
+
+    // EMA condition (optional):
+    // price < selectedEMA (downtrend confirmation)
+    if (useEmaFilter) {
+      return rsiCondition && currentPrice < selectedEma;
+    }
+
+    return rsiCondition;
   }
 
   /// Checks if conditions are partially met for long (one RSI condition satisfied)
@@ -183,10 +217,18 @@ class TechnicalAnalysis {
     if (isLongSignal) return false; // Already a full signal
     final rsi6Ok = rsi6 < rsi6LongThreshold;
     final rsi12Ok = rsi12 < rsi12LongThreshold;
-    final trendOk = currentPrice > ema21;
 
-    // At least one RSI condition + trend condition
-    return trendOk && (rsi6Ok || rsi12Ok);
+    // At least one RSI condition
+    if (!rsi6Ok && !rsi12Ok) return false;
+
+    // If EMA filter is on, check trend condition
+    if (useEmaFilter) {
+      final trendOk = currentPrice > selectedEma;
+      return trendOk && (rsi6Ok || rsi12Ok);
+    }
+
+    // Without EMA filter, just need one RSI condition
+    return rsi6Ok || rsi12Ok;
   }
 
   /// Checks if conditions are partially met for short (one RSI condition satisfied)
@@ -194,10 +236,18 @@ class TechnicalAnalysis {
     if (isShortSignal) return false; // Already a full signal
     final rsi6Ok = rsi6 > rsi6ShortThreshold;
     final rsi12Ok = rsi12 > rsi12ShortThreshold;
-    final trendOk = currentPrice < ema21;
 
-    // At least one RSI condition + trend condition
-    return trendOk && (rsi6Ok || rsi12Ok);
+    // At least one RSI condition
+    if (!rsi6Ok && !rsi12Ok) return false;
+
+    // If EMA filter is on, check trend condition
+    if (useEmaFilter) {
+      final trendOk = currentPrice < selectedEma;
+      return trendOk && (rsi6Ok || rsi12Ok);
+    }
+
+    // Without EMA filter, just need one RSI condition
+    return rsi6Ok || rsi12Ok;
   }
 
   /// Get signal status text
@@ -232,6 +282,8 @@ TechnicalAnalysis analyzePriceData(
   required double rsi6ShortThreshold,
   required double rsi12LongThreshold,
   required double rsi12ShortThreshold,
+  required bool useEmaFilter,
+  required int emaPeriod,
 }) {
   if (closePrices.length < 30) {
     throw ArgumentError('Need at least 30 price points for analysis');
@@ -249,6 +301,17 @@ TechnicalAnalysis analyzePriceData(
   final currentPrice = closePrices.last;
   final currentVolume = volumes.last;
 
+  // Calculate selected EMA based on period
+  double selectedEma;
+  if (emaPeriod == 9) {
+    selectedEma = ema9;
+  } else if (emaPeriod == 21) {
+    selectedEma = ema21;
+  } else {
+    // Calculate custom EMA for any period (1-500)
+    selectedEma = calculateEMA(closePrices, emaPeriod);
+  }
+
   return TechnicalAnalysis(
     rsi6: rsi6,
     rsi12: rsi12,
@@ -262,5 +325,8 @@ TechnicalAnalysis analyzePriceData(
     rsi6ShortThreshold: rsi6ShortThreshold,
     rsi12LongThreshold: rsi12LongThreshold,
     rsi12ShortThreshold: rsi12ShortThreshold,
+    useEmaFilter: useEmaFilter,
+    emaPeriod: emaPeriod,
+    selectedEma: selectedEma,
   );
 }
