@@ -2,19 +2,19 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
-import 'package:vibration/vibration.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/models/position.dart';
 import 'package:bybit_scalping_bot/models/order.dart';
 import 'package:bybit_scalping_bot/models/trade_log.dart';
+import 'package:bybit_scalping_bot/models/candle_progress.dart';
 import 'package:bybit_scalping_bot/repositories/bybit_repository.dart';
 import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
 import 'package:bybit_scalping_bot/constants/api_constants.dart';
 import 'package:bybit_scalping_bot/constants/app_constants.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
+import 'package:bybit_scalping_bot/utils/signal_strength.dart';
 import 'package:bybit_scalping_bot/utils/notification_helper.dart';
 
 /// Trading signal status
@@ -74,6 +74,8 @@ class TradingProvider extends ChangeNotifier {
   final List<double> _realtimeVolumes = []; // Store volumes from WebSocket
   double? _currentPrice; // Current price for selected symbol
   TechnicalAnalysis? _technicalAnalysis; // Technical indicators
+  CandleProgress? _currentCandleProgress; // Current candle progress tracking
+  SignalStrength? _currentSignalStrength; // Current signal strength
   TradingStatus _tradingStatus = TradingStatus.noSignal; // Current trading status
   DateTime? _lastStatusUpdate; // Last status update time
 
@@ -96,7 +98,7 @@ class TradingProvider extends ChangeNotifier {
     // If bot is running (e.g., after hot reload), immediately check position
     if (_isRunning) {
       print('TradingProvider: Bot is running after reload, checking position...');
-      await _checkAndTrade();
+      await _updatePositionStatus();
     }
 
     // Foreground task initialization is done when starting the bot on Android
@@ -173,6 +175,8 @@ class TradingProvider extends ChangeNotifier {
   List<TradeLog> get logs => List.unmodifiable(_logs);
   double? get currentPrice => _currentPrice;
   TechnicalAnalysis? get technicalAnalysis => _technicalAnalysis;
+  CandleProgress? get currentCandleProgress => _currentCandleProgress;
+  SignalStrength? get currentSignalStrength => _currentSignalStrength;
   TradingStatus get tradingStatus => _tradingStatus;
   DateTime? get lastStatusUpdate => _lastStatusUpdate;
 
@@ -498,27 +502,23 @@ class TradingProvider extends ChangeNotifier {
   /// Handles kline update from WebSocket
   void _handleKlineUpdate(Map<String, dynamic> data) {
     try {
-      print('TradingProvider: WebSocket message received - topic: ${data['topic']}');
-
       if (data['topic'] == null || !data['topic'].toString().startsWith('kline')) {
-        print('TradingProvider: Ignoring non-kline message');
         return;
       }
 
       final klineData = data['data'] as List<dynamic>;
       if (klineData.isEmpty) {
-        print('TradingProvider: Empty kline data array');
         return;
       }
 
       final kline = klineData[0] as Map<String, dynamic>;
-      print('TradingProvider: Full kline data: $kline');
 
       final closePrice = double.tryParse(kline['close']?.toString() ?? '0') ?? 0.0;
       final volume = double.tryParse(kline['volume']?.toString() ?? '0') ?? 0.0;
       final confirm = kline['confirm'] as bool? ?? false;
 
-      print('TradingProvider: Parsed kline - close: $closePrice, volume: $volume, confirm: $confirm');
+      // Track candle progress for hybrid entry strategy
+      _currentCandleProgress = CandleProgress.fromKline(kline);
 
       // Update current price for UI display (even for unconfirmed candles)
       if (closePrice > 0) {
@@ -587,10 +587,36 @@ class TradingProvider extends ChangeNotifier {
       // Store technical analysis for UI display
       _technicalAnalysis = analysis;
 
-      // Only log on significant changes (to reduce log spam)
-      print('TradingProvider: 📊 RSI(6): ${analysis.rsi6.toStringAsFixed(1)}, RSI(14): ${analysis.rsi12.toStringAsFixed(1)}, Price: \$${analysis.currentPrice.toStringAsFixed(2)}');
+      // Calculate signal strength for hybrid entry strategy
+      if (analysis.isLongSignal || analysis.isShortSignal) {
+        final isLong = analysis.isLongSignal;
+
+        if (_tradingMode == TradingMode.bollinger && analysis.bollingerBands != null) {
+          _currentSignalStrength = calculateBollingerSignalStrength(
+            analysis: analysis,
+            isLongSignal: isLong,
+            recentClosePrices: _realtimeClosePrices,
+          );
+        } else if (_tradingMode == TradingMode.ema) {
+          _currentSignalStrength = calculateEmaSignalStrength(
+            analysis: analysis,
+            isLongSignal: isLong,
+            recentClosePrices: _realtimeClosePrices,
+          );
+        }
+
+        print('TradingProvider: 📊 Signal: ${isLong ? "LONG" : "SHORT"} | ${_currentSignalStrength?.toString() ?? "N/A"}');
+      } else {
+        _currentSignalStrength = null;
+      }
 
       notifyListeners();
+
+      // 🚀 IMMEDIATE ENTRY SIGNAL CHECK (WebSocket-driven trading)
+      // Check for entry signals immediately when bot is running and no position exists
+      if (_isRunning && (_currentPosition == null || _currentPosition!.isClosed)) {
+        _findEntrySignal();
+      }
     } catch (e) {
       print('TradingProvider: ❌ Error calculating realtime indicators: $e');
     }
@@ -702,7 +728,7 @@ class TradingProvider extends ChangeNotifier {
     }
   }
 
-  /// Starts monitoring loop
+  /// Starts monitoring loop (periodic position status check)
   void _startMonitoring() {
     _monitoringTimer = Timer.periodic(
       AppConstants.botMonitoringInterval,
@@ -712,13 +738,16 @@ class TradingProvider extends ChangeNotifier {
           return;
         }
 
-        await _checkAndTrade();
+        await _updatePositionStatus();
       },
     );
   }
 
-  /// Main trading logic - checks positions and executes trades
-  Future<void> _checkAndTrade() async {
+  /// Updates current position status (called periodically)
+  ///
+  /// This runs every 3 seconds to sync position state from API.
+  /// Entry signal detection happens immediately in WebSocket handler.
+  Future<void> _updatePositionStatus() async {
     try {
       // SAFETY: Never touch BTCUSDT positions - they are long-term holds
       if (_symbol == 'BTCUSDT') {
@@ -730,7 +759,7 @@ class TradingProvider extends ChangeNotifier {
         return;
       }
 
-      // Fetch current position
+      // Fetch current position to sync state
       final positionResult = await _repository.getPosition(symbol: _symbol);
 
       if (positionResult.isFailure) {
@@ -743,8 +772,8 @@ class TradingProvider extends ChangeNotifier {
       final position = positionResult.dataOrNull;
 
       if (position == null || position.isClosed) {
-        // No position - look for entry signal
-        await _findEntrySignal();
+        // No position - update state
+        _currentPosition = null;
       } else {
         // Position exists - update UI with position info
         // TP/SL orders will automatically close the position server-side
@@ -756,59 +785,91 @@ class TradingProvider extends ChangeNotifier {
           'PnL: ${position.pnlPercent.toStringAsFixed(2)}% | '
           'TP/SL active',
         ));
-        notifyListeners();
       }
+
+      notifyListeners();
     } catch (e) {
-      _addLog(TradeLog.error('Monitoring error: ${e.toString()}'));
+      _addLog(TradeLog.error('Position status update error: ${e.toString()}'));
     }
   }
 
-  /// Finds entry signal using technical indicators
+  /// Finds entry signal using technical indicators (Hybrid Strategy)
   Future<void> _findEntrySignal() async {
     try {
       // Use real-time analysis from WebSocket
       final analysis = _technicalAnalysis;
       if (analysis == null) {
-        _addLog(TradeLog.warning('No technical analysis available'));
         return;
       }
-
-      // Log technical analysis
-      _addLog(TradeLog.info(
-        'RSI(6): ${analysis.rsi6.toStringAsFixed(1)} | '
-        'RSI(12): ${analysis.rsi12.toStringAsFixed(1)} | '
-        'Vol: ${analysis.currentVolume.toStringAsFixed(0)} (MA5: ${analysis.volumeMA5.toStringAsFixed(0)}) | '
-        'EMA(9): \$${analysis.ema9.toStringAsFixed(2)} | '
-        'EMA(21): \$${analysis.ema21.toStringAsFixed(2)}',
-      ));
 
       // Determine entry signal
       String? side;
+      bool isLong = false;
+
       if (analysis.isLongSignal) {
         side = ApiConstants.orderSideBuy;
-        _addLog(TradeLog.success(
-          '🟢 LONG Signal: RSI(6)=${analysis.rsi6.toStringAsFixed(1)}, '
-          'Vol↑, Price>${analysis.ema21.toStringAsFixed(0)}',
-        ));
+        isLong = true;
       } else if (analysis.isShortSignal) {
         side = ApiConstants.orderSideSell;
-        _addLog(TradeLog.success(
-          '🔴 SHORT Signal: RSI(6)=${analysis.rsi6.toStringAsFixed(1)}, '
-          'Vol↑, Price<${analysis.ema21.toStringAsFixed(0)}',
-        ));
+        isLong = false;
       } else {
-        // No signal - log current state
-        final volStatus = analysis.currentVolume > analysis.volumeMA5 ? 'High' : 'Low';
-        final priceVsEma21 = analysis.currentPrice > analysis.ema21 ? 'Above' : 'Below';
-        _addLog(TradeLog.info(
-          'No entry signal | Vol: $volStatus, Price: $priceVsEma21 EMA21 | '
-          'RSI(6): ${analysis.rsi6.toStringAsFixed(1)} | '
-          'RSI(12): ${analysis.rsi12.toStringAsFixed(1)}',
+        // No signal - update status
+        _updateTradingStatus(TradingStatus.noSignal);
+        return;
+      }
+
+      // Hybrid Entry Strategy: Check if immediate entry is allowed
+      final candleProgress = _currentCandleProgress;
+      final signalStrength = _currentSignalStrength;
+
+      if (candleProgress == null || signalStrength == null) {
+        _addLog(TradeLog.warning('Missing candle progress or signal strength data'));
+        return;
+      }
+
+      // Evaluate hybrid entry decision
+      final decision = HybridEntryDecision.evaluate(
+        candleProgress: candleProgress,
+        signalStrength: signalStrength.totalScore,
+      );
+
+      // Log signal detection
+      _addLog(TradeLog.success(
+        '${isLong ? "🟢 LONG" : "🔴 SHORT"} Signal | '
+        '${signalStrength.signalGrade} (${signalStrength.totalScore.toStringAsFixed(1)}점) | '
+        '캔들: ${candleProgress.stageName} ${candleProgress.progressPercent.toStringAsFixed(0)}%',
+      ));
+
+      _addLog(TradeLog.info(
+        '판단: ${decision.reason} → ${decision.recommendation}',
+      ));
+
+      // Update trading status based on signal strength and candle progress
+      // Ready: Signal detected with high probability (80%+)
+      // - Candle progress >= 80% OR
+      // - Signal strength >= 6.0 (strong signal)
+      final isReadyState = candleProgress.progressPercent >= 80.0 || signalStrength.totalScore >= 6.0;
+
+      if (isReadyState) {
+        _updateTradingStatus(TradingStatus.ready);
+      }
+
+      // Check if immediate entry is allowed
+      if (!decision.canEnterImmediately) {
+        _addLog(TradeLog.warning(
+          '진입 보류: ${candleProgress.remainingTimeString} 후 캔들 클로즈 대기',
         ));
         return;
       }
 
-      // Create order with current price
+      // Entry allowed - create order
+      _addLog(TradeLog.success(
+        '✅ 진입 조건 충족: ${decision.reason}',
+      ));
+
+      // Log detailed technical indicators at order time
+      _logTechnicalIndicatorsSnapshot(analysis, signalStrength, isLong);
+
       await _createOrderWithPrice(side, analysis.currentPrice);
     } catch (e) {
       _addLog(TradeLog.error('Entry signal error: ${e.toString()}'));
@@ -930,6 +991,12 @@ class TradingProvider extends ChangeNotifier {
         _addLog(TradeLog.success(
           '$sideText position opened with TP/SL orders $modeText',
         ));
+
+        // Update status to Ordered
+        _updateTradingStatus(TradingStatus.ordered);
+
+        // Trigger notification (vibration + haptic feedback)
+        await NotificationHelper.notifyOrderEvent();
       } else {
         _addLog(TradeLog.error(
           'Order failed: ${result.errorOrNull}',
@@ -956,6 +1023,77 @@ class TradingProvider extends ChangeNotifier {
   void clearLogs() {
     _logs.clear();
     notifyListeners();
+  }
+
+  /// Updates trading status and timestamp
+  void _updateTradingStatus(TradingStatus newStatus) {
+    if (_tradingStatus != newStatus) {
+      _tradingStatus = newStatus;
+      _lastStatusUpdate = DateTime.now();
+      notifyListeners();
+
+      // Trigger haptic feedback for Ready state
+      if (newStatus == TradingStatus.ready) {
+        NotificationHelper.notifyReadyState();
+      }
+    }
+  }
+
+  /// Logs detailed technical indicators snapshot at order time
+  void _logTechnicalIndicatorsSnapshot(
+    TechnicalAnalysis analysis,
+    SignalStrength signalStrength,
+    bool isLong,
+  ) {
+    // Basic info
+    _addLog(TradeLog.info(
+      '📊 ${isLong ? "LONG" : "SHORT"} Entry Indicators:',
+    ));
+
+    // Price and RSI
+    _addLog(TradeLog.info(
+      'Price: \$${analysis.currentPrice.toStringAsFixed(2)} | '
+      'RSI(6): ${analysis.rsi6.toStringAsFixed(1)} | '
+      'RSI(14): ${analysis.rsi12.toStringAsFixed(1)}',
+    ));
+
+    // EMA
+    _addLog(TradeLog.info(
+      'EMA(9): \$${analysis.ema9.toStringAsFixed(2)} | '
+      'EMA(21): \$${analysis.ema21.toStringAsFixed(2)}',
+    ));
+
+    // Bollinger Bands (if available)
+    if (analysis.bollingerBands != null) {
+      final bb = analysis.bollingerBands!;
+      _addLog(TradeLog.info(
+        'BB Upper: \$${bb.upper.toStringAsFixed(2)} | '
+        'BB Middle: \$${bb.middle.toStringAsFixed(2)} | '
+        'BB Lower: \$${bb.lower.toStringAsFixed(2)}',
+      ));
+      if (analysis.bollingerRsi != null) {
+        _addLog(TradeLog.info(
+          'BB RSI(14): ${analysis.bollingerRsi!.toStringAsFixed(1)}',
+        ));
+      }
+    }
+
+    // Volume
+    _addLog(TradeLog.info(
+      'Volume: ${analysis.currentVolume.toStringAsFixed(2)} | '
+      'Vol MA5: ${analysis.volumeMA5.toStringAsFixed(2)} | '
+      'Vol MA10: ${analysis.volumeMA10.toStringAsFixed(2)} | '
+      'Ratio: ${(analysis.currentVolume / analysis.volumeMA5).toStringAsFixed(2)}x',
+    ));
+
+    // Signal Strength Breakdown
+    _addLog(TradeLog.info(
+      '💪 Signal Breakdown: Total ${signalStrength.totalScore.toStringAsFixed(1)}/10 | '
+      'BB: ${signalStrength.bollingerScore.toStringAsFixed(1)} | '
+      'RSI: ${signalStrength.rsiScore.toStringAsFixed(1)} | '
+      'Vol: ${signalStrength.volumeScore.toStringAsFixed(1)} | '
+      'Candle: ${signalStrength.candleSizeScore.toStringAsFixed(1)}',
+    ));
   }
 
   @override

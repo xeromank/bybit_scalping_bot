@@ -528,6 +528,51 @@ class _TradingControlsState extends State<TradingControls> {
                           ],
                         ),
                       ],
+                      // Trading Status Section (after technical indicators)
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getStatusBackgroundColor(provider.tradingStatus),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Status
+                            Row(
+                              children: [
+                                Icon(
+                                  _getStatusIcon(provider.tradingStatus),
+                                  size: 16,
+                                  color: _getStatusColor(provider.tradingStatus),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _getStatusText(provider.tradingStatus),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: _getStatusColor(provider.tradingStatus),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Last update time
+                            if (provider.lastStatusUpdate != null)
+                              Text(
+                                _formatUpdateTime(provider.lastStatusUpdate!),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: ThemeConstants.textSecondaryColor,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -581,6 +626,65 @@ class _TradingControlsState extends State<TradingControls> {
       return Colors.red.shade700; // Overbought - potential sell
     } else {
       return ThemeConstants.textPrimaryColor; // Neutral
+    }
+  }
+
+  String _getStatusText(TradingStatus status) {
+    switch (status) {
+      case TradingStatus.noSignal:
+        return 'No Signal';
+      case TradingStatus.ready:
+        return 'Ready';
+      case TradingStatus.ordered:
+        return 'Ordered';
+    }
+  }
+
+  Color _getStatusColor(TradingStatus status) {
+    switch (status) {
+      case TradingStatus.noSignal:
+        return ThemeConstants.textSecondaryColor;
+      case TradingStatus.ready:
+        return Colors.orange.shade700;
+      case TradingStatus.ordered:
+        return Colors.green.shade700;
+    }
+  }
+
+  Color _getStatusBackgroundColor(TradingStatus status) {
+    switch (status) {
+      case TradingStatus.noSignal:
+        return ThemeConstants.cardColor.withOpacity(0.5);
+      case TradingStatus.ready:
+        return Colors.orange.shade50;
+      case TradingStatus.ordered:
+        return Colors.green.shade50;
+    }
+  }
+
+  IconData _getStatusIcon(TradingStatus status) {
+    switch (status) {
+      case TradingStatus.noSignal:
+        return Icons.remove_circle_outline;
+      case TradingStatus.ready:
+        return Icons.notifications_active;
+      case TradingStatus.ordered:
+        return Icons.check_circle;
+    }
+  }
+
+  String _formatUpdateTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inSeconds < 5) {
+      return 'Just now';
+    } else if (diff.inSeconds < 60) {
+      return '${diff.inSeconds}s ago';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}m ago';
+    } else {
+      return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
     }
   }
 
