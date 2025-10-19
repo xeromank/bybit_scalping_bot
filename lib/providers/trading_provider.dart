@@ -1227,6 +1227,62 @@ class TradingProvider extends ChangeNotifier {
         '✅ 진입 조건 충족: ${decision.reason}',
       ));
 
+      // ========== BOLLINGER BAND ENTRY FILTER ==========
+      // Check Bollinger band distance for additional entry validation
+      if (_tradingMode == TradingMode.bollinger && analysis.bollingerBands != null) {
+        final bb = analysis.bollingerBands!;
+        final price = analysis.currentPrice;
+
+        // Calculate distance from Bollinger band
+        final bandDistance = isLong
+            ? ((price - bb.lower) / bb.lower * 100)  // Long: distance from lower
+            : ((bb.upper - price) / bb.upper * 100); // Short: distance from upper
+
+        // Determine minimum signal strength required based on distance
+        double minSignalRequired;
+        String zone;
+
+        if (bandDistance < 0) {
+          // Price is BEYOND the band (very risky!)
+          zone = '위험 (밴드 밖)';
+          minSignalRequired = 999.0; // Block entry
+        } else if (bandDistance < 0.1) {
+          // Optimal zone: very close to band
+          zone = '최적 (밴드 터치)';
+          minSignalRequired = 2.0;
+        } else if (bandDistance < 0.3) {
+          // Good zone: near band
+          zone = '양호 (밴드 근처)';
+          minSignalRequired = 3.5;
+        } else if (bandDistance < 0.5) {
+          // Caution zone: getting farther
+          zone = '주의 (밴드 이탈)';
+          minSignalRequired = 5.0;
+        } else {
+          // Risk zone: too far from band
+          zone = '위험 (밴드 멀리)';
+          minSignalRequired = 999.0; // Block entry
+        }
+
+        // Check if signal strength meets requirement
+        if (signalStrength.totalScore < minSignalRequired) {
+          _addLog(TradeLog.warning(
+            '⛔ 진입 차단 | 구간: $zone | '
+            '밴드 거리: ${bandDistance.toStringAsFixed(2)}% | '
+            '신호: ${signalStrength.totalScore.toStringAsFixed(1)}점 '
+            '< 필요: ${minSignalRequired == 999.0 ? "차단" : "${minSignalRequired.toStringAsFixed(1)}점"}',
+          ));
+          return; // Block entry
+        }
+
+        // Entry allowed - log the approval
+        _addLog(TradeLog.success(
+          '✅ 진입 허용 | 구간: $zone | '
+          '밴드 거리: ${bandDistance.toStringAsFixed(2)}% | '
+          '신호: ${signalStrength.totalScore.toStringAsFixed(1)}점',
+        ));
+      }
+
       // Log detailed technical indicators at order time
       _logTechnicalIndicatorsSnapshot(analysis, signalStrength, isLong);
 
