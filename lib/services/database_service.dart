@@ -28,8 +28,9 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -41,7 +42,8 @@ class DatabaseService {
         timestamp INTEGER NOT NULL,
         type TEXT NOT NULL,
         message TEXT NOT NULL,
-        symbol TEXT NOT NULL
+        symbol TEXT NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
@@ -66,13 +68,30 @@ class DatabaseService {
         volume_ma5 REAL NOT NULL,
         bollinger_upper REAL,
         bollinger_middle REAL,
-        bollinger_lower REAL
+        bollinger_lower REAL,
+        synced INTEGER NOT NULL DEFAULT 0
       )
     ''');
 
     // Create indexes for faster queries
     await db.execute('CREATE INDEX idx_trade_logs_timestamp ON trade_logs(timestamp DESC)');
     await db.execute('CREATE INDEX idx_order_history_timestamp ON order_history(timestamp DESC)');
+    await db.execute('CREATE INDEX idx_trade_logs_synced ON trade_logs(synced)');
+    await db.execute('CREATE INDEX idx_order_history_synced ON order_history(synced)');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add synced column to trade_logs
+      await db.execute('ALTER TABLE trade_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
+
+      // Add synced column to order_history
+      await db.execute('ALTER TABLE order_history ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
+
+      // Create indexes for synced column
+      await db.execute('CREATE INDEX idx_trade_logs_synced ON trade_logs(synced)');
+      await db.execute('CREATE INDEX idx_order_history_synced ON order_history(synced)');
+    }
   }
 
   /// Inserts a trade log entry
@@ -248,5 +267,92 @@ class DatabaseService {
   Future<void> close() async {
     final db = await database;
     await db.close();
+  }
+
+  // ============================================================================
+  // Sync-related methods (for future MongoDB integration)
+  // ============================================================================
+
+  /// Gets unsynced trade logs
+  Future<List<Map<String, dynamic>>> getUnsyncedTradeLogs({int? limit}) async {
+    final db = await database;
+    return await db.query(
+      'trade_logs',
+      where: 'synced = ?',
+      whereArgs: [0],
+      orderBy: 'timestamp ASC',
+      limit: limit,
+    );
+  }
+
+  /// Gets unsynced order history
+  Future<List<Map<String, dynamic>>> getUnsyncedOrderHistory({int? limit}) async {
+    final db = await database;
+    return await db.query(
+      'order_history',
+      where: 'synced = ?',
+      whereArgs: [0],
+      orderBy: 'timestamp ASC',
+      limit: limit,
+    );
+  }
+
+  /// Marks trade logs as synced
+  Future<int> markTradeLogsAsSynced(List<int> ids) async {
+    final db = await database;
+    return await db.update(
+      'trade_logs',
+      {'synced': 1},
+      where: 'id IN (${ids.map((_) => '?').join(', ')})',
+      whereArgs: ids,
+    );
+  }
+
+  /// Marks order history as synced
+  Future<int> markOrderHistoryAsSynced(List<int> ids) async {
+    final db = await database;
+    return await db.update(
+      'order_history',
+      {'synced': 1},
+      where: 'id IN (${ids.map((_) => '?').join(', ')})',
+      whereArgs: ids,
+    );
+  }
+
+  /// Gets count of unsynced trade logs
+  Future<int> getUnsyncedTradeLogsCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM trade_logs WHERE synced = 0'
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Gets count of unsynced order history
+  Future<int> getUnsyncedOrderHistoryCount() async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM order_history WHERE synced = 0'
+    );
+    return Sqflite.firstIntValue(result) ?? 0;
+  }
+
+  /// Gets total synced records count
+  Future<Map<String, int>> getSyncStats() async {
+    final db = await database;
+
+    final tradeLogsTotal = await db.rawQuery('SELECT COUNT(*) as count FROM trade_logs');
+    final tradeLogsSynced = await db.rawQuery('SELECT COUNT(*) as count FROM trade_logs WHERE synced = 1');
+    final orderHistoryTotal = await db.rawQuery('SELECT COUNT(*) as count FROM order_history');
+    final orderHistorySynced = await db.rawQuery('SELECT COUNT(*) as count FROM order_history WHERE synced = 1');
+
+    return {
+      'tradeLogsTotal': Sqflite.firstIntValue(tradeLogsTotal) ?? 0,
+      'tradeLogsSynced': Sqflite.firstIntValue(tradeLogsSynced) ?? 0,
+      'tradeLogsUnsynced': (Sqflite.firstIntValue(tradeLogsTotal) ?? 0) - (Sqflite.firstIntValue(tradeLogsSynced) ?? 0),
+      'orderHistoryTotal': Sqflite.firstIntValue(orderHistoryTotal) ?? 0,
+      'orderHistorySynced': Sqflite.firstIntValue(orderHistorySynced) ?? 0,
+      'orderHistoryUnsynced': (Sqflite.firstIntValue(orderHistoryTotal) ?? 0) - (Sqflite.firstIntValue(orderHistorySynced) ?? 0),
+    };
   }
 }
