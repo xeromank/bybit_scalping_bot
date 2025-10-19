@@ -63,6 +63,8 @@ class CoinoneTradingProvider extends ChangeNotifier {
   double _volatilityPercent = 0.0;
   TradingSignal? _lastSignal;
   double? _entryPrice; // Track entry price for position management
+  double? _stopLossPrice; // Stop loss price from signal
+  double? _takeProfitPrice; // Take profit price from signal
 
   // Trading state
   CoinoneOrder? _activeOrder; // Current open order
@@ -356,6 +358,8 @@ class CoinoneTradingProvider extends ChangeNotifier {
           _logTrade('info', 'Exit condition met - closing position');
           await _executeSell(1.0); // High strength for exit
           _entryPrice = null;
+          _stopLossPrice = null;
+          _takeProfitPrice = null;
           return;
         }
       }
@@ -391,6 +395,8 @@ class CoinoneTradingProvider extends ChangeNotifier {
       // Execute trade if signal is strong enough
       if (signal.type == SignalType.buy && signal.strength >= 0.7) {
         _entryPrice = signal.entryPrice;
+        _stopLossPrice = signal.stopLoss;
+        _takeProfitPrice = signal.takeProfit;
         await _executeBuy(signal);
       }
 
@@ -409,7 +415,18 @@ class CoinoneTradingProvider extends ChangeNotifier {
       return false;
     }
 
-    // Use strategy-specific exit logic
+    // First check Stop Loss and Take Profit (highest priority)
+    if (_stopLossPrice != null && currentPrice <= _stopLossPrice!) {
+      _logTrade('info', 'Stop Loss hit: ${currentPrice.toStringAsFixed(2)} <= ${_stopLossPrice!.toStringAsFixed(2)}');
+      return true;
+    }
+
+    if (_takeProfitPrice != null && currentPrice >= _takeProfitPrice!) {
+      _logTrade('info', 'Take Profit hit: ${currentPrice.toStringAsFixed(2)} >= ${_takeProfitPrice!.toStringAsFixed(2)}');
+      return true;
+    }
+
+    // Then check strategy-specific exit logic (momentum loss, etc.)
     switch (_currentTrend!) {
       case MarketTrend.uptrend:
         return _uptrendStrategy.shouldClosePosition(

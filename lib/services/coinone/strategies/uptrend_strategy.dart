@@ -121,13 +121,13 @@ class UptrendStrategy implements TradingStrategy {
     double entryPrice,
     double currentPrice,
   ) {
-    // Note: SL/TP are calculated at entry time based on RSI tier
-    // This method is called by the provider which uses the signal's stopLoss/takeProfit values
-    // So we only check for momentum loss here
+    // Note: SL/TP are checked by the provider using signal's stopLoss/takeProfit
+    // This method only checks additional exit conditions
 
     // Check momentum loss: price crosses below EMA21
     final price = indicators.currentPrice;
     final ema21 = indicators.ema21;
+
     if (price < ema21) {
       return true; // Exit on momentum loss
     }
