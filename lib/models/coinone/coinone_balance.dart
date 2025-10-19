@@ -27,8 +27,8 @@ class CoinoneBalance {
       balance: double.parse(json['balance']?.toString() ?? '0'),
       pendingWithdrawal: double.parse(json['pending_withdrawal']?.toString() ?? '0'),
       pendingDeposit: double.parse(json['pending_deposit']?.toString() ?? '0'),
-      averagePrice: json['avg_price'] != null
-          ? double.tryParse(json['avg_price'].toString())
+      averagePrice: json['average_price'] != null
+          ? double.tryParse(json['average_price'].toString())
           : null,
     );
   }

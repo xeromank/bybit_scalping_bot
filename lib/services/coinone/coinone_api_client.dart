@@ -180,7 +180,7 @@ class CoinoneApiClient {
                 'balance': item['available'], // V2.1 doesn't have separate balance field
                 'pending_withdrawal': '0',
                 'pending_deposit': '0',
-                'avg_price': item['avg_price'], // Include average buy price
+                'average_price': item['average_price'], // Include average buy price from API
               };
             }
           }

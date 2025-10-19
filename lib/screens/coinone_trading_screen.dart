@@ -642,8 +642,8 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
               ),
             ],
 
-            // Show profit/loss for non-KRW coins
-            if (!isKRW && averagePrice > 0 && ticker != null) ...[
+            // Show average price and profit/loss for non-KRW coins
+            if (!isKRW && ticker != null) ...[
               const SizedBox(height: ThemeConstants.spacingSmall),
               const Divider(height: 1),
               const SizedBox(height: ThemeConstants.spacingSmall),
@@ -652,67 +652,130 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
                 children: [
                   const Text(
                     '평균 매수가',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey,
+                    ),
                   ),
                   Text(
-                    '${averagePrice.toStringAsFixed(averagePrice > 1000 ? 0 : 2)} 원',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
+                    averagePrice > 0
+                        ? '${averagePrice.toStringAsFixed(averagePrice > 1000 ? 0 : 2)} 원'
+                        : '데이터 없음',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: averagePrice > 0 ? Colors.black87 : Colors.grey,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
+              if (averagePrice > 0) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: profitLossPercent >= 0
+                        ? ThemeConstants.successColor.withOpacity(0.1)
+                        : ThemeConstants.errorColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: profitLossPercent >= 0
+                          ? ThemeConstants.successColor.withOpacity(0.3)
+                          : ThemeConstants.errorColor.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        '수익률',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: profitLossPercent >= 0
-                              ? ThemeConstants.successColor.withOpacity(0.2)
-                              : ThemeConstants.errorColor.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${profitLossPercent >= 0 ? '+' : ''}${profitLossPercent.toStringAsFixed(2)}%',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                      Row(
+                        children: [
+                          Icon(
+                            profitLossPercent >= 0
+                                ? Icons.trending_up
+                                : Icons.trending_down,
                             color: profitLossPercent >= 0
                                 ? ThemeConstants.successColor
                                 : ThemeConstants.errorColor,
+                            size: 20,
                           ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            '수익률',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: profitLossPercent >= 0
+                                  ? ThemeConstants.successColor
+                                  : ThemeConstants.errorColor,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${profitLossPercent >= 0 ? '+' : ''}${profitLossPercent.toStringAsFixed(2)}%',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '${profitLossAmount >= 0 ? '+' : ''}${profitLossAmount.toStringAsFixed(0)} 원',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: profitLossAmount >= 0
+                              ? ThemeConstants.successColor
+                              : ThemeConstants.errorColor,
                         ),
                       ),
                     ],
                   ),
-                  Text(
-                    '${profitLossAmount >= 0 ? '+' : ''}${profitLossAmount.toStringAsFixed(0)} 원',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: profitLossAmount >= 0
-                          ? ThemeConstants.successColor
-                          : ThemeConstants.errorColor,
+                ),
+              ] else ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.grey.withOpacity(0.3),
+                      width: 1,
                     ),
                   ),
-                ],
-              ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.grey,
+                        size: 16,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '평균 매수가 정보가 없어 수익률을 계산할 수 없습니다',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ],
         ),
