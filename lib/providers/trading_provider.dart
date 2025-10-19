@@ -44,7 +44,7 @@ class TradingProvider extends ChangeNotifier {
   String _leverage = AppConstants.defaultLeverage;
 
   // Trading Mode (configurable by user)
-  TradingMode _tradingMode = TradingMode.bollinger; // Default to Bollinger Band strategy
+  TradingMode _tradingMode = TradingMode.multiTimeframe; // Default to Bollinger Band strategy
 
   // Bollinger Band Mode Settings (configurable by user)
   int _bollingerPeriod = AppConstants.defaultBollingerPeriod;
