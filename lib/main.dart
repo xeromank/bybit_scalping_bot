@@ -15,6 +15,16 @@ import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/constants/app_constants.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
+// Coinone imports
+import 'package:bybit_scalping_bot/services/coinone/coinone_api_client.dart';
+import 'package:bybit_scalping_bot/services/coinone/coinone_websocket_client.dart';
+import 'package:bybit_scalping_bot/repositories/coinone_repository.dart';
+import 'package:bybit_scalping_bot/providers/coinone_balance_provider.dart';
+import 'package:bybit_scalping_bot/providers/coinone_trading_provider.dart';
+import 'package:bybit_scalping_bot/providers/coinone_withdrawal_provider.dart';
+import 'package:bybit_scalping_bot/screens/coinone_trading_screen.dart';
+import 'package:bybit_scalping_bot/core/enums/exchange_type.dart';
+
 /// Main entry point for the refactored application
 ///
 /// This file demonstrates proper dependency injection and follows
@@ -46,6 +56,7 @@ class MyApp extends StatelessWidget {
     // Shared WebSocket clients (created once per authentication session)
     BybitWebSocketClient? sharedWsClient;
     BybitPublicWebSocketClient? sharedPublicWsClient;
+    CoinoneWebSocketClient? sharedCoinoneWsClient;
 
     return MultiProvider(
       providers: [
@@ -200,6 +211,85 @@ class MyApp extends StatelessWidget {
             return null;
           },
         ),
+
+        // ============================================================================
+        // Coinone Providers (for spot trading)
+        // ============================================================================
+
+        // Coinone Balance Provider
+        ChangeNotifierProxyProvider<AuthProvider, CoinoneBalanceProvider?>(
+          create: (context) => null,
+          update: (context, authProvider, previous) {
+            if (authProvider.isAuthenticated &&
+                authProvider.credentials != null &&
+                authProvider.currentExchange == ExchangeType.coinone) {
+              final apiClient = CoinoneApiClient(
+                apiKey: authProvider.credentials!.apiKey,
+                apiSecret: authProvider.credentials!.apiSecret,
+              );
+              final repository = CoinoneRepository(apiClient: apiClient);
+
+              return previous ?? CoinoneBalanceProvider(repository: repository);
+            }
+            return null;
+          },
+        ),
+
+        // Coinone Trading Provider
+        ChangeNotifierProxyProvider<AuthProvider, CoinoneTradingProvider?>(
+          create: (context) => null,
+          update: (context, authProvider, previous) {
+            if (authProvider.isAuthenticated &&
+                authProvider.credentials != null &&
+                authProvider.currentExchange == ExchangeType.coinone) {
+              final apiClient = CoinoneApiClient(
+                apiKey: authProvider.credentials!.apiKey,
+                apiSecret: authProvider.credentials!.apiSecret,
+              );
+              final repository = CoinoneRepository(apiClient: apiClient);
+
+              // Reuse or create WebSocket client
+              sharedCoinoneWsClient ??= CoinoneWebSocketClient();
+
+              return previous ??
+                  CoinoneTradingProvider(
+                    repository: repository,
+                    wsClient: sharedCoinoneWsClient!,
+                  );
+            } else {
+              // Disconnect WebSocket when logged out
+              sharedCoinoneWsClient?.disconnect();
+              sharedCoinoneWsClient = null;
+            }
+            return null;
+          },
+        ),
+
+        // Coinone Withdrawal Provider
+        ChangeNotifierProxyProvider<AuthProvider, CoinoneWithdrawalProvider?>(
+          create: (context) => null,
+          update: (context, authProvider, previous) {
+            if (authProvider.isAuthenticated &&
+                authProvider.credentials != null &&
+                authProvider.currentExchange == ExchangeType.coinone) {
+              final apiClient = CoinoneApiClient(
+                apiKey: authProvider.credentials!.apiKey,
+                apiSecret: authProvider.credentials!.apiSecret,
+              );
+              final repository = CoinoneRepository(apiClient: apiClient);
+
+              final provider = previous ?? CoinoneWithdrawalProvider(repository: repository);
+
+              // Initialize provider
+              if (previous == null) {
+                provider.initialize();
+              }
+
+              return provider;
+            }
+            return null;
+          },
+        ),
       ],
       child: MaterialApp(
         title: AppConstants.appName,
@@ -239,13 +329,23 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!mounted) return;
 
-    // Navigate based on authentication state
+    // Navigate based on authentication state and exchange type
     if (authProvider.isAuthenticated) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(
-          builder: (context) => const TradingScreenNew(),
-        ),
-      );
+      // Route to appropriate trading screen based on exchange
+      if (authProvider.currentExchange == ExchangeType.coinone) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const CoinoneTradingScreen(),
+          ),
+        );
+      } else {
+        // Default to Bybit
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const TradingScreenNew(),
+          ),
+        );
+      }
     } else {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(

@@ -45,6 +45,9 @@ dependencies:
   # Cryptography for API signature
   crypto: ^3.0.3
 
+  # UUID generation for Coinone V2.1 API
+  uuid: ^4.0.0
+
   # Local storage for API credentials
   flutter_secure_storage: ^9.0.0
   shared_preferences: ^2.2.2

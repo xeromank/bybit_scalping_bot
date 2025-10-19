@@ -2,20 +2,20 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import '../../core/interfaces/trading_database_service.dart';
 
-/// Database service for storing trading logs and order history
+/// Coinone-specific database service
 ///
-/// Provides persistent storage for:
-/// - Trade logs (max 100 displayed, all stored)
-/// - Order history with technical indicators
-class DatabaseService {
-  static final DatabaseService _instance = DatabaseService._internal();
+/// Manages coinone_trading.db for all Coinone spot trading data
+class CoinoneDatabaseService implements TradingDatabaseService {
+  static final CoinoneDatabaseService _instance = CoinoneDatabaseService._internal();
   static Database? _database;
 
-  factory DatabaseService() => _instance;
+  factory CoinoneDatabaseService() => _instance;
 
-  DatabaseService._internal();
+  CoinoneDatabaseService._internal();
 
+  @override
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
@@ -24,13 +24,12 @@ class DatabaseService {
 
   Future<Database> _initDatabase() async {
     final Directory documentsDirectory = await getApplicationDocumentsDirectory();
-    final String path = join(documentsDirectory.path, 'trading.db');
+    final String path = join(documentsDirectory.path, 'coinone_trading.db');
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 1,
       onCreate: _onCreate,
-      onUpgrade: _onUpgrade,
     );
   }
 
@@ -47,29 +46,34 @@ class DatabaseService {
       )
     ''');
 
-    // Order history table
+    // Order history table (Coinone-specific fields)
     await db.execute('''
       CREATE TABLE order_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp INTEGER NOT NULL,
         symbol TEXT NOT NULL,
         side TEXT NOT NULL,
-        entry_price REAL NOT NULL,
+        price REAL NOT NULL,
         quantity REAL NOT NULL,
-        leverage INTEGER NOT NULL,
-        tp_price REAL NOT NULL,
-        sl_price REAL NOT NULL,
-        signal_strength REAL NOT NULL,
-        rsi6 REAL NOT NULL,
-        rsi14 REAL NOT NULL,
-        ema9 REAL NOT NULL,
-        ema21 REAL NOT NULL,
-        volume REAL NOT NULL,
-        volume_ma5 REAL NOT NULL,
+        user_order_id TEXT NOT NULL,
+        order_id TEXT,
+        status TEXT NOT NULL,
         bollinger_upper REAL,
         bollinger_middle REAL,
         bollinger_lower REAL,
         synced INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    // Withdrawal addresses cache (Coinone-specific)
+    await db.execute('''
+      CREATE TABLE withdrawal_addresses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coin TEXT NOT NULL,
+        address TEXT NOT NULL,
+        label TEXT,
+        last_used INTEGER NOT NULL,
+        UNIQUE(coin, address)
       )
     ''');
 
@@ -78,23 +82,14 @@ class DatabaseService {
     await db.execute('CREATE INDEX idx_order_history_timestamp ON order_history(timestamp DESC)');
     await db.execute('CREATE INDEX idx_trade_logs_synced ON trade_logs(synced)');
     await db.execute('CREATE INDEX idx_order_history_synced ON order_history(synced)');
+    await db.execute('CREATE INDEX idx_withdrawal_last_used ON withdrawal_addresses(last_used DESC)');
   }
 
-  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Add synced column to trade_logs
-      await db.execute('ALTER TABLE trade_logs ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
+  // ============================================================================
+  // Trade Logs
+  // ============================================================================
 
-      // Add synced column to order_history
-      await db.execute('ALTER TABLE order_history ADD COLUMN synced INTEGER NOT NULL DEFAULT 0');
-
-      // Create indexes for synced column
-      await db.execute('CREATE INDEX idx_trade_logs_synced ON trade_logs(synced)');
-      await db.execute('CREATE INDEX idx_order_history_synced ON order_history(synced)');
-    }
-  }
-
-  /// Inserts a trade log entry
+  @override
   Future<int> insertTradeLog({
     required String type,
     required String message,
@@ -109,7 +104,7 @@ class DatabaseService {
     });
   }
 
-  /// Gets recent trade logs (default: 100)
+  @override
   Future<List<Map<String, dynamic>>> getRecentTradeLogs({
     int limit = 100,
     String? symbol,
@@ -132,22 +127,25 @@ class DatabaseService {
     }
   }
 
-  /// Inserts an order history entry
+  @override
+  Future<int> deleteAllTradeLogs() async {
+    final db = await database;
+    return await db.delete('trade_logs');
+  }
+
+  // ============================================================================
+  // Order History
+  // ============================================================================
+
+  /// Inserts a Coinone order history entry
   Future<int> insertOrderHistory({
     required String symbol,
     required String side,
-    required double entryPrice,
+    required double price,
     required double quantity,
-    required int leverage,
-    required double tpPrice,
-    required double slPrice,
-    required double signalStrength,
-    required double rsi6,
-    required double rsi14,
-    required double ema9,
-    required double ema21,
-    required double volume,
-    required double volumeMa5,
+    required String userOrderId,
+    String? orderId,
+    required String status,
     double? bollingerUpper,
     double? bollingerMiddle,
     double? bollingerLower,
@@ -157,25 +155,18 @@ class DatabaseService {
       'timestamp': DateTime.now().millisecondsSinceEpoch,
       'symbol': symbol,
       'side': side,
-      'entry_price': entryPrice,
+      'price': price,
       'quantity': quantity,
-      'leverage': leverage,
-      'tp_price': tpPrice,
-      'sl_price': slPrice,
-      'signal_strength': signalStrength,
-      'rsi6': rsi6,
-      'rsi14': rsi14,
-      'ema9': ema9,
-      'ema21': ema21,
-      'volume': volume,
-      'volume_ma5': volumeMa5,
+      'user_order_id': userOrderId,
+      'order_id': orderId,
+      'status': status,
       'bollinger_upper': bollingerUpper,
       'bollinger_middle': bollingerMiddle,
       'bollinger_lower': bollingerLower,
     });
   }
 
-  /// Gets order history (default: 100)
+  @override
   Future<List<Map<String, dynamic>>> getOrderHistory({
     int limit = 100,
     String? symbol,
@@ -198,72 +189,65 @@ class DatabaseService {
     }
   }
 
-  /// Deletes old trade logs (keeps last N entries)
-  Future<int> cleanupOldTradeLogs({int keep = 1000}) async {
-    final db = await database;
-    // Get the timestamp of the Nth newest log
-    final List<Map<String, dynamic>> result = await db.query(
-      'trade_logs',
-      columns: ['timestamp'],
-      orderBy: 'timestamp DESC',
-      limit: 1,
-      offset: keep,
-    );
-
-    if (result.isEmpty) return 0;
-
-    final int cutoffTimestamp = result.first['timestamp'] as int;
-    return await db.delete(
-      'trade_logs',
-      where: 'timestamp < ?',
-      whereArgs: [cutoffTimestamp],
-    );
-  }
-
-  /// Deletes old order history (keeps last N entries)
-  Future<int> cleanupOldOrderHistory({int keep = 1000}) async {
-    final db = await database;
-    // Get the timestamp of the Nth newest order
-    final List<Map<String, dynamic>> result = await db.query(
-      'order_history',
-      columns: ['timestamp'],
-      orderBy: 'timestamp DESC',
-      limit: 1,
-      offset: keep,
-    );
-
-    if (result.isEmpty) return 0;
-
-    final int cutoffTimestamp = result.first['timestamp'] as int;
-    return await db.delete(
-      'order_history',
-      where: 'timestamp < ?',
-      whereArgs: [cutoffTimestamp],
-    );
-  }
-
-  /// Deletes all trade logs
-  Future<int> deleteAllTradeLogs() async {
-    final db = await database;
-    return await db.delete('trade_logs');
-  }
-
-  /// Deletes all order history
+  @override
   Future<int> deleteAllOrderHistory() async {
     final db = await database;
     return await db.delete('order_history');
   }
 
-  /// Deletes all data (trade logs and order history)
+  // ============================================================================
+  // Withdrawal Addresses (Coinone-specific)
+  // ============================================================================
+
+  /// Save or update a withdrawal address
+  Future<int> saveWithdrawalAddress({
+    required String coin,
+    required String address,
+    String? label,
+  }) async {
+    final db = await database;
+    return await db.insert(
+      'withdrawal_addresses',
+      {
+        'coin': coin,
+        'address': address,
+        'label': label,
+        'last_used': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  /// Get recent withdrawal addresses for a coin
+  Future<List<Map<String, dynamic>>> getWithdrawalAddresses({
+    required String coin,
+    int limit = 10,
+  }) async {
+    final db = await database;
+    return await db.query(
+      'withdrawal_addresses',
+      where: 'coin = ?',
+      whereArgs: [coin],
+      orderBy: 'last_used DESC',
+      limit: limit,
+    );
+  }
+
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+
+  @override
   Future<void> clearAllData() async {
     final db = await database;
     await db.transaction((txn) async {
       await txn.delete('trade_logs');
       await txn.delete('order_history');
+      await txn.delete('withdrawal_addresses');
     });
   }
 
-  /// Closes the database
+  @override
   Future<void> close() async {
     final db = await database;
     await db.close();
@@ -273,7 +257,7 @@ class DatabaseService {
   // Sync-related methods (for future MongoDB integration)
   // ============================================================================
 
-  /// Gets unsynced trade logs
+  @override
   Future<List<Map<String, dynamic>>> getUnsyncedTradeLogs({int? limit}) async {
     final db = await database;
     return await db.query(
@@ -285,7 +269,7 @@ class DatabaseService {
     );
   }
 
-  /// Gets unsynced order history
+  @override
   Future<List<Map<String, dynamic>>> getUnsyncedOrderHistory({int? limit}) async {
     final db = await database;
     return await db.query(
@@ -297,7 +281,7 @@ class DatabaseService {
     );
   }
 
-  /// Marks trade logs as synced
+  @override
   Future<int> markTradeLogsAsSynced(List<int> ids) async {
     final db = await database;
     return await db.update(
@@ -308,7 +292,7 @@ class DatabaseService {
     );
   }
 
-  /// Marks order history as synced
+  @override
   Future<int> markOrderHistoryAsSynced(List<int> ids) async {
     final db = await database;
     return await db.update(
@@ -319,25 +303,7 @@ class DatabaseService {
     );
   }
 
-  /// Gets count of unsynced trade logs
-  Future<int> getUnsyncedTradeLogsCount() async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM trade_logs WHERE synced = 0'
-    );
-    return Sqflite.firstIntValue(result) ?? 0;
-  }
-
-  /// Gets count of unsynced order history
-  Future<int> getUnsyncedOrderHistoryCount() async {
-    final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as count FROM order_history WHERE synced = 0'
-    );
-    return Sqflite.firstIntValue(result) ?? 0;
-  }
-
-  /// Gets total synced records count
+  @override
   Future<Map<String, int>> getSyncStats() async {
     final db = await database;
 

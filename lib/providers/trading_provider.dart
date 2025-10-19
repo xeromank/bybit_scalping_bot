@@ -16,7 +16,7 @@ import 'package:bybit_scalping_bot/constants/app_constants.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
 import 'package:bybit_scalping_bot/utils/signal_strength.dart';
 import 'package:bybit_scalping_bot/utils/notification_helper.dart';
-import 'package:bybit_scalping_bot/services/database_service.dart';
+import 'package:bybit_scalping_bot/services/bybit/bybit_database_service.dart';
 import 'package:bybit_scalping_bot/services/advanced_trading_strategy.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
@@ -36,7 +36,7 @@ enum TradingStatus {
 class TradingProvider extends ChangeNotifier {
   final BybitRepository _repository;
   final BybitPublicWebSocketClient? _publicWsClient;
-  final DatabaseService _databaseService = DatabaseService();
+  final BybitDatabaseService _databaseService = BybitDatabaseService();
 
   // Configuration
   String _symbol = AppConstants.defaultSymbol;

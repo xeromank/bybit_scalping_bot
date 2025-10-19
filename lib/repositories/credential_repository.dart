@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/models/credentials.dart';
+import 'package:bybit_scalping_bot/models/exchange_credentials.dart';
+import 'package:bybit_scalping_bot/core/enums/exchange_type.dart';
 import 'package:bybit_scalping_bot/services/secure_storage_service.dart';
 
 /// Repository for managing API credentials
@@ -107,6 +110,169 @@ class CredentialRepository {
     } catch (e) {
       return Failure(
         'Failed to clear all data',
+        Exception(e.toString()),
+      );
+    }
+  }
+
+  // ============================================================================
+  // Multi-Exchange Support (New)
+  // ============================================================================
+
+  /// Save credentials for specific exchange
+  Future<Result<bool>> saveExchangeCredentials(
+    ExchangeType exchange,
+    String apiKey,
+    String apiSecret, {
+    String? label,
+  }) async {
+    try {
+      final storageKey = '${exchange.identifier}_credentials';
+
+      await _storageService.write(
+        key: storageKey,
+        value: json.encode({
+          'apiKey': apiKey,
+          'apiSecret': apiSecret,
+        }),
+      );
+
+      // Update recent credentials list
+      await _addToRecentCredentials(
+        ExchangeCredentials(
+          exchangeType: exchange,
+          apiKey: apiKey,
+          apiSecret: apiSecret,
+          lastUsed: DateTime.now(),
+          label: label,
+        ),
+      );
+
+      return const Success(true);
+    } catch (e) {
+      return Failure(
+        'Failed to save ${exchange.displayName} credentials',
+        Exception(e.toString()),
+      );
+    }
+  }
+
+  /// Get credentials for specific exchange
+  Future<Result<ExchangeCredentials?>> getExchangeCredentials(
+    ExchangeType exchange,
+  ) async {
+    try {
+      final storageKey = '${exchange.identifier}_credentials';
+      final data = await _storageService.read(key: storageKey);
+
+      if (data == null) {
+        return const Success(null);
+      }
+
+      final decoded = json.decode(data) as Map<String, dynamic>;
+
+      return Success(ExchangeCredentials(
+        exchangeType: exchange,
+        apiKey: decoded['apiKey'] as String,
+        apiSecret: decoded['apiSecret'] as String,
+        lastUsed: DateTime.now(),
+      ));
+    } catch (e) {
+      return Failure(
+        'Failed to retrieve ${exchange.displayName} credentials',
+        Exception(e.toString()),
+      );
+    }
+  }
+
+  /// Get recent credentials for specific exchange (max 5)
+  Future<Result<List<ExchangeCredentials>>> getRecentCredentials(
+    ExchangeType exchange,
+  ) async {
+    try {
+      final storageKey = '${exchange.identifier}_recent';
+      final data = await _storageService.read(key: storageKey);
+
+      if (data == null) {
+        return const Success([]);
+      }
+
+      final decoded = json.decode(data) as List<dynamic>;
+      final credentials = decoded
+          .map((e) => ExchangeCredentials.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      // Sort by lastUsed descending
+      credentials.sort((a, b) => b.lastUsed.compareTo(a.lastUsed));
+
+      return Success(credentials);
+    } catch (e) {
+      return Failure(
+        'Failed to retrieve recent ${exchange.displayName} credentials',
+        Exception(e.toString()),
+      );
+    }
+  }
+
+  /// Add to recent credentials list (keeps max 5)
+  Future<void> _addToRecentCredentials(ExchangeCredentials credentials) async {
+    final storageKey = '${credentials.exchangeType.identifier}_recent';
+
+    // Get existing list
+    final existingData = await _storageService.read(key: storageKey);
+    List<ExchangeCredentials> recentList = [];
+
+    if (existingData != null) {
+      final decoded = json.decode(existingData) as List<dynamic>;
+      recentList = decoded
+          .map((e) => ExchangeCredentials.fromJson(e as Map<String, dynamic>))
+          .toList();
+    }
+
+    // Remove if already exists (to avoid duplicates)
+    recentList.removeWhere((c) =>
+      c.apiKey == credentials.apiKey &&
+      c.apiSecret == credentials.apiSecret
+    );
+
+    // Add new credentials at the beginning
+    recentList.insert(0, credentials.copyWith(lastUsed: DateTime.now()));
+
+    // Keep only 5 most recent
+    if (recentList.length > 5) {
+      recentList = recentList.sublist(0, 5);
+    }
+
+    // Save back
+    await _storageService.write(
+      key: storageKey,
+      value: json.encode(recentList.map((e) => e.toJson()).toList()),
+    );
+  }
+
+  /// Delete credentials for specific exchange
+  Future<Result<bool>> deleteExchangeCredentials(ExchangeType exchange) async {
+    try {
+      final storageKey = '${exchange.identifier}_credentials';
+      await _storageService.delete(key: storageKey);
+      return const Success(true);
+    } catch (e) {
+      return Failure(
+        'Failed to delete ${exchange.displayName} credentials',
+        Exception(e.toString()),
+      );
+    }
+  }
+
+  /// Check if exchange has stored credentials
+  Future<Result<bool>> hasExchangeCredentials(ExchangeType exchange) async {
+    try {
+      final storageKey = '${exchange.identifier}_credentials';
+      final data = await _storageService.read(key: storageKey);
+      return Success(data != null);
+    } catch (e) {
+      return Failure(
+        'Failed to check ${exchange.displayName} credentials',
         Exception(e.toString()),
       );
     }

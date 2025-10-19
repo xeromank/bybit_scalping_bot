@@ -1,0 +1,325 @@
+{
+  "config": {
+    "initial_capital": 100000,
+    "position_size": 0.95,
+    "period_days": 30,
+    "data_points": 200
+  },
+  "results": [
+    {
+      "strategy": "Bollinger Bands",
+      "total_trades": 7,
+      "winning_trades": 4,
+      "losing_trades": 2,
+      "win_rate": 57.14285714285714,
+      "final_capital": 70185.22996683013,
+      "profit": -29814.770033169872,
+      "return_pct": -29.814770033169875,
+      "avg_profit": 66.02108835164834,
+      "max_profit": 303.95581381835274,
+      "max_loss": -130.85008813504828
+    },
+    {
+      "strategy": "RSI",
+      "total_trades": 3,
+      "winning_trades": 3,
+      "losing_trades": 0,
+      "win_rate": 100.0,
+      "final_capital": 87325.70506320994,
+      "profit": -12674.294936790058,
+      "return_pct": -12.674294936790059,
+      "avg_profit": 550.6968443996989,
+      "max_profit": 709.6162857600436,
+      "max_loss": 291.32980206300533
+    },
+    {
+      "strategy": "EMA Crossover",
+      "total_trades": 5,
+      "winning_trades": 3,
+      "losing_trades": 2,
+      "win_rate": 60.0,
+      "final_capital": 77458.8018549207,
+      "profit": -22541.198145079296,
+      "return_pct": -22.541198145079296,
+      "avg_profit": 2.1751531609091215,
+      "max_profit": 554.648539858975,
+      "max_loss": -619.9067464624883
+    },
+    {
+      "strategy": "Combined Strategy (Uptrend)",
+      "total_trades": 1,
+      "winning_trades": 1,
+      "losing_trades": 0,
+      "win_rate": 100.0,
+      "final_capital": 95120.40580800668,
+      "profit": -4879.594191993325,
+      "return_pct": -4.879594191993325,
+      "avg_profit": 158.40200800666935,
+      "max_profit": 158.40200800666935,
+      "max_loss": 158.40200800666935
+    }
+  ],
+  "trades": {
+    "bollinger_bands": [
+      {
+        "timestamp": "2025-10-19 00:45:00",
+        "type": "BUY",
+        "price": 3571.0,
+        "quantity": 26.603192383085972,
+        "capital": 100000
+      },
+      {
+        "timestamp": "2025-10-19 01:25:00",
+        "type": "SELL",
+        "price": 3579.0,
+        "quantity": 26.603192383085972,
+        "profit": 212.82553906468777,
+        "capital": 95212.8255390647
+      },
+      {
+        "timestamp": "2025-10-19 03:00:00",
+        "type": "BUY",
+        "price": 3571.0,
+        "quantity": 25.329651151529394,
+        "capital": 95212.8255390647
+      },
+      {
+        "timestamp": "2025-10-19 03:15:00",
+        "type": "SELL",
+        "price": 3583.0,
+        "quantity": 25.329651151529394,
+        "profit": 303.95581381835274,
+        "capital": 90756.14007592981
+      },
+      {
+        "timestamp": "2025-10-19 05:40:00",
+        "type": "BUY",
+        "price": 3579.0,
+        "quantity": 24.090062328061837,
+        "capital": 90756.14007592981
+      },
+      {
+        "timestamp": "2025-10-19 06:55:00",
+        "type": "SELL",
+        "price": 3576.0,
+        "quantity": 24.090062328061837,
+        "profit": -72.27018698418551,
+        "capital": 86146.06288514913
+      },
+      {
+        "timestamp": "2025-10-19 07:40:00",
+        "type": "BUY",
+        "price": 3570.0,
+        "quantity": 22.924022336384223,
+        "capital": 86146.06288514913
+      },
+      {
+        "timestamp": "2025-10-19 07:55:00",
+        "type": "SELL",
+        "price": 3572.0,
+        "quantity": 22.924022336384223,
+        "profit": 45.848044672768445,
+        "capital": 81884.60778556444
+      },
+      {
+        "timestamp": "2025-10-19 08:30:00",
+        "type": "BUY",
+        "price": 3567.0,
+        "quantity": 21.80834802250805,
+        "capital": 81884.60778556444
+      },
+      {
+        "timestamp": "2025-10-19 09:40:00",
+        "type": "SELL",
+        "price": 3561.0,
+        "quantity": 21.80834802250805,
+        "profit": -130.85008813504828,
+        "capital": 77659.52730815117
+      },
+      {
+        "timestamp": "2025-10-19 12:10:00",
+        "type": "BUY",
+        "price": 3594.0,
+        "quantity": 20.527699204992654,
+        "capital": 77659.52730815117
+      },
+      {
+        "timestamp": "2025-10-19 12:55:00",
+        "type": "SELL",
+        "price": 3599.0,
+        "quantity": 20.527699204992654,
+        "profit": 102.63849602496327,
+        "capital": 73879.18943876856
+      },
+      {
+        "timestamp": "2025-10-19 15:40:00",
+        "type": "BUY",
+        "price": 3631.0,
+        "quantity": 19.32944917841645,
+        "capital": 73879.18943876856
+      },
+      {
+        "timestamp": "2025-10-19 15:45:00",
+        "type": "SELL",
+        "price": 3631.0,
+        "quantity": 19.32944917841645,
+        "profit": 0.0,
+        "capital": 70185.22996683013
+      }
+    ],
+    "rsi": [
+      {
+        "timestamp": "2025-10-19 00:15:00",
+        "type": "BUY",
+        "price": 3587.0,
+        "quantity": 26.48452746027321,
+        "capital": 100000,
+        "rsi": 29.729729729729726
+      },
+      {
+        "timestamp": "2025-10-19 03:40:00",
+        "type": "SELL",
+        "price": 3598.0,
+        "quantity": 26.48452746027321,
+        "profit": 291.32980206300533,
+        "capital": 95291.329802063,
+        "rsi": 71.73913043478261
+      },
+      {
+        "timestamp": "2025-10-19 06:25:00",
+        "type": "BUY",
+        "price": 3572.0,
+        "quantity": 25.343438777144414,
+        "capital": 95291.329802063,
+        "rsi": 22.727272727272734
+      },
+      {
+        "timestamp": "2025-10-19 10:20:00",
+        "type": "SELL",
+        "price": 3600.0,
+        "quantity": 25.343438777144414,
+        "profit": 709.6162857600436,
+        "capital": 91236.37959771989,
+        "rsi": 73.91304347826087
+      },
+      {
+        "timestamp": "2025-10-19 12:10:00",
+        "type": "BUY",
+        "price": 3594.0,
+        "quantity": 24.116460939853614,
+        "capital": 91236.37959771989,
+        "rsi": 25.925925925925924
+      },
+      {
+        "timestamp": "2025-10-19 13:35:00",
+        "type": "SELL",
+        "price": 3621.0,
+        "quantity": 24.116460939853614,
+        "profit": 651.1444453760475,
+        "capital": 87325.70506320994,
+        "rsi": 75.40983606557377
+      }
+    ],
+    "ema_crossover": [
+      {
+        "timestamp": "2025-10-18 23:30:00",
+        "type": "BUY",
+        "price": 3604.0,
+        "quantity": 26.359600443951166,
+        "capital": 100000
+      },
+      {
+        "timestamp": "2025-10-18 23:50:00",
+        "type": "SELL",
+        "price": 3599.0,
+        "quantity": 26.359600443951166,
+        "profit": -131.79800221975583,
+        "capital": 94868.20199778024
+      },
+      {
+        "timestamp": "2025-10-19 03:25:00",
+        "type": "BUY",
+        "price": 3583.0,
+        "quantity": 25.153444570999504,
+        "capital": 94868.20199778024
+      },
+      {
+        "timestamp": "2025-10-19 05:30:00",
+        "type": "SELL",
+        "price": 3585.0,
+        "quantity": 25.153444570999504,
+        "profit": 50.30688914199901,
+        "capital": 90175.09878703322
+      },
+      {
+        "timestamp": "2025-10-19 08:15:00",
+        "type": "BUY",
+        "price": 3593.0,
+        "quantity": 23.842567171634165,
+        "capital": 90175.09878703322
+      },
+      {
+        "timestamp": "2025-10-19 08:30:00",
+        "type": "SELL",
+        "price": 3567.0,
+        "quantity": 23.842567171634165,
+        "profit": -619.9067464624883,
+        "capital": 85046.43710121907
+      },
+      {
+        "timestamp": "2025-10-19 09:50:00",
+        "type": "BUY",
+        "price": 3588.0,
+        "quantity": 22.51786935511653,
+        "capital": 85046.43710121907
+      },
+      {
+        "timestamp": "2025-10-19 12:15:00",
+        "type": "SELL",
+        "price": 3595.0,
+        "quantity": 22.51786935511653,
+        "profit": 157.6250854858157,
+        "capital": 80951.74033164393
+      },
+      {
+        "timestamp": "2025-10-19 13:25:00",
+        "type": "BUY",
+        "price": 3605.0,
+        "quantity": 21.332636148422118,
+        "capital": 80951.74033164393
+      },
+      {
+        "timestamp": "2025-10-19 15:45:00",
+        "type": "SELL",
+        "price": 3631.0,
+        "quantity": 21.332636148422118,
+        "profit": 554.648539858975,
+        "capital": 77458.8018549207
+      }
+    ],
+    "combined": [
+      {
+        "timestamp": "2025-10-19 12:50:00",
+        "type": "BUY",
+        "price": 3597.0,
+        "quantity": 26.405615790936892,
+        "capital": 100000,
+        "rsi": 34.04255319148936,
+        "ema50": 3593.2612065481726,
+        "ema200": 3588.291296013126,
+        "signal": "RSI",
+        "trend": "UPTREND"
+      },
+      {
+        "timestamp": "2025-10-19 13:20:00",
+        "type": "SELL",
+        "price": 3603.0,
+        "quantity": 26.405615790936892,
+        "profit": 158.40200800666935,
+        "capital": 95120.40580800668,
+        "rsi": 59.183673469387756,
+        "exit_reason": "BB"
+      }
+    ]
+  }
+}
