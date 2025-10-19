@@ -17,6 +17,7 @@ import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
 import 'package:bybit_scalping_bot/utils/signal_strength.dart';
 import 'package:bybit_scalping_bot/utils/notification_helper.dart';
 import 'package:bybit_scalping_bot/services/database_service.dart';
+import 'package:bybit_scalping_bot/services/advanced_trading_strategy.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Trading signal status
@@ -59,6 +60,9 @@ class TradingProvider extends ChangeNotifier {
   double _rsi14LongThreshold = AppConstants.defaultRsi14LongThreshold;
   double _rsi14ShortThreshold = AppConstants.defaultRsi14ShortThreshold;
 
+  // Multi-Timeframe Mode Strategy (advanced strategy instance)
+  final AdvancedTradingStrategy _advancedStrategy = AdvancedTradingStrategy();
+
   // Volume Filter Settings (common for both modes)
   bool _useVolumeFilter = AppConstants.defaultUseVolumeFilter;
   double _volumeMultiplier = AppConstants.defaultVolumeMultiplier;
@@ -89,6 +93,14 @@ class TradingProvider extends ChangeNotifier {
   bool _disposed = false; // Track if provider is disposed
   bool _isKlineSubscribed = false; // Track if kline is already subscribed
   String? _subscribedSymbol; // Track which symbol is subscribed
+
+  // Multi-Timeframe signal cooldown tracking
+  DateTime? _lastMtfSignalTime; // Last time a MTF signal was generated
+
+  // Market trend analysis
+  MarketTrend _currentTrend = MarketTrend.unknown;
+  DateTime? _trendAnalyzedAt;
+  double _trendChangePercent = 0.0;
 
   TradingProvider({
     required BybitRepository repository,
@@ -253,6 +265,24 @@ class TradingProvider extends ChangeNotifier {
   // TP/SL Getters
   bool get useAutomaticTpSl => _useAutomaticTpSl;
 
+  // Market Trend Getters
+  MarketTrend get currentTrend => _currentTrend;
+  DateTime? get trendAnalyzedAt => _trendAnalyzedAt;
+  double get trendChangePercent => _trendChangePercent;
+
+  String get trendDescription {
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return '상승장 ${_trendChangePercent >= 0 ? '+' : ''}${_trendChangePercent.toStringAsFixed(2)}%';
+      case MarketTrend.downtrend:
+        return '하락장 ${_trendChangePercent.toStringAsFixed(2)}%';
+      case MarketTrend.sideways:
+        return '횡보장 ${_trendChangePercent >= 0 ? '+' : ''}${_trendChangePercent.toStringAsFixed(2)}%';
+      case MarketTrend.unknown:
+        return '분석 전';
+    }
+  }
+
   // Setters with validation
   Future<void> setSymbol(String value) async {
     if (!_isRunning && value.isNotEmpty) {
@@ -336,8 +366,12 @@ class TradingProvider extends ChangeNotifier {
         // Bollinger mode: tighter TP/SL
         _profitTargetPercent = AppConstants.defaultBollingerProfitPercent;
         _stopLossPercent = AppConstants.defaultBollingerStopLossPercent;
+      } else if (_tradingMode == TradingMode.multiTimeframe) {
+        // Multi-timeframe mode: very tight scalping TP/SL (price%, not ROE%)
+        _profitTargetPercent = AppConstants.defaultMtfProfitPercent;
+        _stopLossPercent = AppConstants.defaultMtfStopLossPercent;
       } else {
-        // EMA mode: wider TP/SL
+        // EMA/Auto mode: wider TP/SL
         _profitTargetPercent = AppConstants.defaultEmaProfitPercent;
         _stopLossPercent = AppConstants.defaultEmaStopLossPercent;
       }
@@ -706,20 +740,21 @@ class TradingProvider extends ChangeNotifier {
   void _calculateRealtimeIndicators() {
     try {
       // Analyze technical indicators based on trading mode using WebSocket data
+      // Use trend-adjusted thresholds
       final analysis = analyzePriceData(
         _realtimeClosePrices,
         _realtimeVolumes,
         mode: _tradingMode,
-        // Bollinger mode parameters
+        // Bollinger mode parameters (trend-adjusted)
         bollingerPeriod: _bollingerPeriod,
         bollingerStdDev: _bollingerStdDev,
         bollingerRsiPeriod: _bollingerRsiPeriod,
         bollingerRsiOverbought: _bollingerRsiOverbought,
-        bollingerRsiOversold: _bollingerRsiOversold,
+        bollingerRsiOversold: getAdjustedBollingerRsi(), // ADJUSTED
         useVolumeFilter: _useVolumeFilter,
-        volumeMultiplier: _volumeMultiplier,
-        // EMA mode parameters
-        rsi6LongThreshold: _rsi6LongThreshold,
+        volumeMultiplier: getAdjustedBollingerVolume(), // ADJUSTED
+        // EMA mode parameters (trend-adjusted)
+        rsi6LongThreshold: getAdjustedEmaRsi6(), // ADJUSTED
         rsi6ShortThreshold: _rsi6ShortThreshold,
         rsi14LongThreshold: _rsi14LongThreshold,
         rsi14ShortThreshold: _rsi14ShortThreshold,
@@ -800,6 +835,9 @@ class TradingProvider extends ChangeNotifier {
       }
 
       _isRunning = true;
+
+      // Analyze market trend before starting
+      await analyzeMarketTrend();
 
       // Enable wakelock to keep screen on
       await WakelockPlus.enable();
@@ -1156,6 +1194,12 @@ class TradingProvider extends ChangeNotifier {
   /// Finds entry signal using technical indicators (Hybrid Strategy)
   Future<void> _findEntrySignal() async {
     try {
+      // Multi-Timeframe Mode: Use different signal detection logic
+      if (_tradingMode == TradingMode.multiTimeframe) {
+        await _findMultiTimeframeSignal();
+        return;
+      }
+
       // Use real-time analysis from WebSocket
       final analysis = _technicalAnalysis;
       if (analysis == null) {
@@ -1289,6 +1333,322 @@ class TradingProvider extends ChangeNotifier {
       await _createOrderWithPrice(side, analysis, signalStrength);
     } catch (e) {
       _addLog(TradeLog.error('Entry signal error: ${e.toString()}'));
+    }
+  }
+
+  /// Finds entry signal using Multi-Timeframe Strategy
+  ///
+  /// This method implements the comprehensive multi-timeframe strategy:
+  /// - Uses 1-minute RSI14 (from WebSocket)
+  /// - Fetches 5-minute RSI6 data
+  /// - Checks volume filter
+  /// - Applies risk management from AdvancedTradingStrategy
+  Future<void> _findMultiTimeframeSignal() async {
+    try {
+      // Get 1-minute analysis from WebSocket
+      final analysis1m = _technicalAnalysis;
+      if (analysis1m == null) {
+        _updateTradingStatus(TradingStatus.noSignal);
+        return;
+      }
+
+      // Check signal cooldown (prevent duplicate signals within 10 minutes)
+      if (_lastMtfSignalTime != null) {
+        final timeSinceLastSignal = DateTime.now().difference(_lastMtfSignalTime!);
+        if (timeSinceLastSignal.inMinutes < AppConstants.defaultMtfSignalCooldownMinutes) {
+          // Still in cooldown period
+          return;
+        }
+      }
+
+      // Fetch 5-minute kline data to calculate RSI6
+      final kline5m = await _repository.apiClient.getKlines(
+        symbol: _symbol,
+        interval: '5',
+        limit: 30, // Need at least 7 candles for RSI6
+      );
+
+      if (kline5m['retCode'] != 0) {
+        _addLog(TradeLog.error('Failed to fetch 5-minute kline data'));
+        return;
+      }
+
+      // Parse 5-minute data
+      final closePrices5m = parseClosePrices(kline5m);
+      final volumes5m = parseVolumes(kline5m);
+
+      if (closePrices5m.length < 7 || volumes5m.length < 7) {
+        _addLog(TradeLog.error('Insufficient 5-minute data for RSI calculation'));
+        return;
+      }
+
+      // Calculate 5-minute RSI6
+      final rsi6_5m = calculateRSI(closePrices5m, 6);
+
+      // Get 1-minute indicators
+      final rsi14_1m = analysis1m.rsi14;
+      final currentPrice = analysis1m.currentPrice;
+      final currentVolume = analysis1m.currentVolume;
+      final avgVolume = analysis1m.volumeMA5;
+
+      // Check if trading is allowed by risk management
+      if (!_advancedStrategy.canTrade(_orderAmount)) {
+        _addLog(TradeLog.warning(
+          '⛔ Trading blocked: ${_advancedStrategy.getDailyStatus()}'
+        ));
+        _updateTradingStatus(TradingStatus.noSignal);
+        return;
+      }
+
+      // Get trend-adjusted thresholds
+      final adjustedLongRsi6 = getAdjustedMtfLongRsi6();
+      final adjustedShortRsi6 = getAdjustedMtfShortRsi6();
+      final adjustedLongVolume = getAdjustedMtfLongVolume();
+      final adjustedShortVolume = getAdjustedMtfShortVolume();
+
+      // Evaluate entry conditions for LONG (trend-adjusted)
+      // 1. 5분봉 RSI6 < threshold (trend-adjusted)
+      // 2. 1분봉 RSI14 30-50 (반등 초기)
+      // 3. 거래량 > 평균 × multiplier (trend-adjusted)
+      bool longCondition1 = rsi6_5m < adjustedLongRsi6;
+      bool longCondition2 = rsi14_1m >= AppConstants.defaultMtfRsi14LongMin &&
+                           rsi14_1m <= AppConstants.defaultMtfRsi14LongMax;
+      bool longCondition3 = currentVolume > avgVolume * adjustedLongVolume;
+
+      // Evaluate entry conditions for SHORT (trend-adjusted)
+      // 1. 5분봉 RSI6 > threshold (trend-adjusted)
+      // 2. 1분봉 RSI14 50-70 (하락 초기)
+      // 3. 거래량 > 평균 × multiplier (trend-adjusted)
+      // 4. 추세 필터: 최근 20캔들 하락 추세 (-0.5% 이상)
+      bool shortCondition1 = rsi6_5m > adjustedShortRsi6;
+      bool shortCondition2 = rsi14_1m >= AppConstants.defaultMtfRsi14ShortMin &&
+                            rsi14_1m <= AppConstants.defaultMtfRsi14ShortMax;
+      bool shortCondition3 = currentVolume > avgVolume * adjustedShortVolume;
+
+      // Trend filter for SHORT: Check if market is in downtrend
+      bool shortCondition4 = true; // Default to true if trend filter disabled
+      if (AppConstants.defaultMtfUseTrendFilter && closePrices5m.length >= AppConstants.defaultMtfTrendPeriod) {
+        final trendStartPrice = closePrices5m[closePrices5m.length - AppConstants.defaultMtfTrendPeriod];
+        final trendEndPrice = closePrices5m.last;
+        final trendChange = ((trendEndPrice - trendStartPrice) / trendStartPrice) * 100;
+
+        // Only allow SHORT if market is in downtrend (< -0.5%)
+        shortCondition4 = trendChange < AppConstants.defaultMtfTrendThreshold;
+      }
+
+      String? side;
+      bool isLong = false;
+      String signal = '';
+
+      if (longCondition1 && longCondition2 && longCondition3) {
+        // Strong Buy: All 3 conditions met
+        side = ApiConstants.orderSideBuy;
+        isLong = true;
+        signal = '🟢 STRONG BUY';
+      } else if (shortCondition1 && shortCondition2 && shortCondition3 && shortCondition4) {
+        // Strong Sell: All 4 conditions met (stricter than LONG)
+        side = ApiConstants.orderSideSell;
+        isLong = false;
+        signal = '🔴 STRONG SELL';
+      }
+
+      if (side == null) {
+        // No signal - log details for debugging
+        String reason = '';
+
+        // Check LONG conditions
+        if (longCondition1 || longCondition2 || longCondition3) {
+          reason = 'LONG: ';
+          reason += longCondition1 ? '5m RSI6 ✓' : '5m RSI6 ✗';
+          reason += longCondition2 ? ', 1m RSI14 ✓' : ', 1m RSI14 ✗';
+          reason += longCondition3 ? ', Vol ✓' : ', Vol ✗';
+          reason += ' | ';
+        }
+
+        // Check SHORT conditions
+        if (shortCondition1 || shortCondition2 || shortCondition3) {
+          reason += 'SHORT: ';
+          reason += shortCondition1 ? '5m RSI6 ✓' : '5m RSI6 ✗';
+          reason += shortCondition2 ? ', 1m RSI14 ✓' : ', 1m RSI14 ✗';
+          reason += shortCondition3 ? ', Vol ✓' : ', Vol ✗';
+          if (AppConstants.defaultMtfUseTrendFilter) {
+            reason += shortCondition4 ? ', Trend ✓' : ', Trend ✗';
+          }
+        }
+
+        if (reason.isEmpty) {
+          reason = '5m RSI6=${rsi6_5m.toStringAsFixed(1)} | 1m RSI14=${rsi14_1m.toStringAsFixed(1)} | Vol=${(currentVolume/avgVolume).toStringAsFixed(2)}x';
+        }
+
+        _updateTradingStatus(TradingStatus.noSignal);
+        _addLog(TradeLog.info('No Signal | $reason'));
+        return;
+      }
+
+      // Mark signal time for cooldown
+      _lastMtfSignalTime = DateTime.now();
+
+      // Signal detected - log details
+      _addLog(TradeLog.success(
+        '$signal Signal | Price=\$${currentPrice.toStringAsFixed(2)} | '
+        '5m RSI6=${rsi6_5m.toStringAsFixed(1)} | 1m RSI14=${rsi14_1m.toStringAsFixed(1)} | '
+        'Vol=${(currentVolume/avgVolume).toStringAsFixed(2)}x'
+      ));
+
+      _updateTradingStatus(TradingStatus.ready);
+
+      // Calculate TP/SL using multi-timeframe strategy settings
+      final entryPrice = currentPrice;
+      final targetPrice = isLong
+          ? entryPrice * (1 + AppConstants.defaultMtfProfitPercent / 100)
+          : entryPrice * (1 - AppConstants.defaultMtfProfitPercent / 100);
+      final stopLoss = isLong
+          ? entryPrice * (1 - AppConstants.defaultMtfStopLossPercent / 100)
+          : entryPrice * (1 + AppConstants.defaultMtfStopLossPercent / 100);
+
+      _addLog(TradeLog.info(
+        'Entry: \$${entryPrice.toStringAsFixed(2)} | '
+        'TP: \$${targetPrice.toStringAsFixed(2)} (+${AppConstants.defaultMtfProfitPercent}%) | '
+        'SL: \$${stopLoss.toStringAsFixed(2)} (-${AppConstants.defaultMtfStopLossPercent}%)'
+      ));
+
+      // Create order (simplified - no hybrid entry logic for multi-timeframe)
+      await _createMultiTimeframeOrder(side, entryPrice, targetPrice, stopLoss);
+    } catch (e) {
+      _addLog(TradeLog.error('Multi-timeframe signal error: ${e.toString()}'));
+      Logger.error('TradingProvider._findMultiTimeframeSignal error: $e');
+    }
+  }
+
+  /// Creates a market order for multi-timeframe strategy
+  Future<void> _createMultiTimeframeOrder(
+    String side,
+    double entryPrice,
+    double targetPrice,
+    double stopLoss,
+  ) async {
+    try {
+      // Get instrument info
+      final instrumentInfo = await _repository.apiClient.getInstrumentsInfo(
+        category: 'linear',
+        symbol: _symbol,
+      );
+
+      String qtyStep = '0.001';
+      String minOrderQty = '0.001';
+
+      try {
+        final result = instrumentInfo['result'];
+        if (result != null && result['list'] != null && (result['list'] as List).isNotEmpty) {
+          final instrument = (result['list'] as List).first;
+          final lotSizeFilter = instrument['lotSizeFilter'];
+          if (lotSizeFilter != null) {
+            qtyStep = lotSizeFilter['qtyStep']?.toString() ?? '0.001';
+            minOrderQty = lotSizeFilter['minOrderQty']?.toString() ?? '0.001';
+          }
+        }
+      } catch (e) {
+        Logger.warning('Failed to parse instrument info, using defaults: $e');
+      }
+
+      // Calculate qty - Multi-timeframe mode uses 30% of available balance
+      final leverageInt = int.parse(_leverage);
+      final positionValue = _orderAmount * (AppConstants.defaultMtfPositionSize / 100);
+      double qty = (positionValue * leverageInt) / entryPrice;
+
+      // Round qty
+      final stepDecimalPlaces = qtyStep.contains('.')
+          ? qtyStep.split('.')[1].length
+          : 0;
+      qty = double.parse(qty.toStringAsFixed(stepDecimalPlaces));
+
+      // Validate minimum qty
+      final minQty = double.parse(minOrderQty);
+      if (qty < minQty) {
+        _addLog(TradeLog.error(
+          'Order quantity too small: $qty < $minQty (minimum). Increase order amount.'
+        ));
+        return;
+      }
+
+      _addLog(TradeLog.info(
+        'Creating ${side == ApiConstants.orderSideBuy ? "LONG" : "SHORT"} order: '
+        'qty=$qty | leverage=${_leverage}x | entry=\$${entryPrice.toStringAsFixed(2)}'
+      ));
+
+      // Create market order using OrderRequest
+      final result = await _repository.createOrder(
+        request: OrderRequest(
+          symbol: _symbol,
+          side: side,
+          orderType: ApiConstants.orderTypeMarket,
+          qty: qty.toString(),
+          takeProfit: targetPrice.toStringAsFixed(2),
+          stopLoss: stopLoss.toStringAsFixed(2),
+        ),
+      );
+
+      switch (result) {
+        case Success(data: final order):
+          final orderPriceStr = order.price.isNotEmpty
+              ? '\$${double.parse(order.price).toStringAsFixed(2)}'
+              : 'Market';
+
+          _addLog(TradeLog.success(
+            '✅ Order Created | ID: ${order.orderId} | '
+            'Side: ${order.side} | Qty: ${order.qty} | '
+            'Price: $orderPriceStr'
+          ));
+
+          // Record entry in database
+          await _recordOrderInDatabase(order, entryPrice, targetPrice, stopLoss);
+
+          // Update position tracking
+          _updateTradingStatus(TradingStatus.ordered);
+
+          // Trigger notification
+          await NotificationHelper.notifyOrderEvent();
+          break;
+
+        case Failure(message: final msg, exception: final ex):
+          _addLog(TradeLog.error('❌ Order Failed: $msg'));
+          Logger.error('TradingProvider: Order creation failed: $msg, $ex');
+      }
+    } catch (e) {
+      _addLog(TradeLog.error('Order creation error: ${e.toString()}'));
+      Logger.error('TradingProvider._createMultiTimeframeOrder error: $e');
+    }
+  }
+
+  /// Records order information in the database
+  Future<void> _recordOrderInDatabase(
+    Order order,
+    double entryPrice,
+    double targetPrice,
+    double stopLoss,
+  ) async {
+    try {
+      await _databaseService.insertOrderHistory(
+        symbol: _symbol,
+        side: order.side,
+        entryPrice: entryPrice,
+        quantity: double.parse(order.qty),
+        leverage: int.parse(_leverage),
+        tpPrice: targetPrice,
+        slPrice: stopLoss,
+        signalStrength: 0.0, // Multi-timeframe mode doesn't use signal strength scoring
+        rsi6: 0.0, // Will be populated if available
+        rsi14: _technicalAnalysis?.rsi14 ?? 0.0,
+        ema9: _technicalAnalysis?.ema9 ?? 0.0,
+        ema21: _technicalAnalysis?.ema21 ?? 0.0,
+        volume: _technicalAnalysis?.currentVolume ?? 0.0,
+        volumeMa5: _technicalAnalysis?.volumeMA5 ?? 0.0,
+        bollingerUpper: null,
+        bollingerMiddle: null,
+        bollingerLower: null,
+      );
+    } catch (e) {
+      Logger.error('Failed to record order in database: $e');
     }
   }
 
@@ -1597,6 +1957,206 @@ class TradingProvider extends ChangeNotifier {
       'Vol: ${signalStrength.volumeScore.toStringAsFixed(1)} | '
       'Candle: ${signalStrength.candleSizeScore.toStringAsFixed(1)}',
     ));
+  }
+
+  /// Analyze market trend based on recent candles
+  /// Called when bot starts or manually triggered
+  Future<void> analyzeMarketTrend() async {
+    try {
+      _addLog(TradeLog.info('📊 시장 추세 분석 시작...'));
+
+      // Fetch recent candles for trend analysis
+      final klines = await _repository.apiClient.getKlines(
+        symbol: _symbol,
+        interval: '5',
+        limit: AppConstants.trendAnalysisCandleCount,
+      );
+
+      if (klines['retCode'] != 0) {
+        _addLog(TradeLog.error('추세 분석 실패: 캔들 데이터 조회 오류'));
+        return;
+      }
+
+      final closePrices = parseClosePrices(klines);
+      if (closePrices.length < 50) {
+        _addLog(TradeLog.error('추세 분석 실패: 데이터 부족 (${closePrices.length}개)'));
+        return;
+      }
+
+      // Calculate trend: compare first and last price
+      final startPrice = closePrices.first;
+      final endPrice = closePrices.last;
+      _trendChangePercent = ((endPrice - startPrice) / startPrice) * 100;
+
+      // Determine trend
+      if (_trendChangePercent > AppConstants.trendUptrendThreshold) {
+        _currentTrend = MarketTrend.uptrend;
+      } else if (_trendChangePercent < AppConstants.trendDowntrendThreshold) {
+        _currentTrend = MarketTrend.downtrend;
+      } else {
+        _currentTrend = MarketTrend.sideways;
+      }
+
+      _trendAnalyzedAt = DateTime.now();
+
+      // Log trend result
+      _addLog(TradeLog.success(
+        '✅ 추세 분석 완료: ${trendDescription} | '
+        '분석 기간: ${closePrices.length}개 캔들 (${(closePrices.length * 5 / 60).toStringAsFixed(1)}시간)'
+      ));
+
+      // Log strategy adjustments
+      _logStrategyAdjustments();
+
+      notifyListeners();
+    } catch (e) {
+      _addLog(TradeLog.error('추세 분석 오류: ${e.toString()}'));
+      Logger.error('TradingProvider.analyzeMarketTrend error: $e');
+    }
+  }
+
+  /// Log strategy adjustments based on current trend
+  void _logStrategyAdjustments() {
+    switch (_tradingMode) {
+      case TradingMode.multiTimeframe:
+        _addLog(TradeLog.info(
+          '⚙️ MTF 전략 조정: LONG (RSI ${getAdjustedMtfLongRsi6().toStringAsFixed(0)}, Vol ${getAdjustedMtfLongVolume().toStringAsFixed(1)}x) | '
+          'SHORT (RSI ${getAdjustedMtfShortRsi6().toStringAsFixed(0)}, Vol ${getAdjustedMtfShortVolume().toStringAsFixed(1)}x)'
+        ));
+        break;
+      case TradingMode.bollinger:
+        _addLog(TradeLog.info(
+          '⚙️ 볼린저 전략 조정: RSI ${getAdjustedBollingerRsi().toStringAsFixed(0)}, Vol ${getAdjustedBollingerVolume().toStringAsFixed(1)}x'
+        ));
+        break;
+      case TradingMode.ema:
+        _addLog(TradeLog.info(
+          '⚙️ EMA 전략 조정: RSI6 ${getAdjustedEmaRsi6().toStringAsFixed(0)}, Vol ${getAdjustedEmaVolume().toStringAsFixed(1)}x'
+        ));
+        break;
+      default:
+        break;
+    }
+  }
+
+  /// Get adjusted RSI threshold for Multi-Timeframe LONG based on market trend
+  double getAdjustedMtfLongRsi6() {
+    final base = AppConstants.defaultMtfRsi6LongThreshold;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.mtfUptrendLongRsiAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.mtfDowntrendLongRsiAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.mtfSidewaysLongRsiAdjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted RSI threshold for Multi-Timeframe SHORT based on market trend
+  double getAdjustedMtfShortRsi6() {
+    final base = AppConstants.defaultMtfRsi6ShortThreshold;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.mtfUptrendShortRsiAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.mtfDowntrendShortRsiAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.mtfSidewaysShortRsiAdjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted volume multiplier for Multi-Timeframe LONG based on market trend
+  double getAdjustedMtfLongVolume() {
+    final base = AppConstants.defaultMtfVolumeLongMultiplier;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.mtfUptrendLongVolumeAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.mtfDowntrendLongVolumeAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.mtfSidewaysLongVolumeAdjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted volume multiplier for Multi-Timeframe SHORT based on market trend
+  double getAdjustedMtfShortVolume() {
+    final base = AppConstants.defaultMtfVolumeShortMultiplier;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.mtfUptrendShortVolumeAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.mtfDowntrendShortVolumeAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.mtfSidewaysShortVolumeAdjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted RSI threshold for Bollinger strategy based on market trend
+  double getAdjustedBollingerRsi() {
+    final base = _bollingerRsiOversold;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.bollingerUptrendRsiAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.bollingerDowntrendRsiAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.bollingerSidewaysRsiAdjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted volume multiplier for Bollinger strategy based on market trend
+  double getAdjustedBollingerVolume() {
+    final base = _volumeMultiplier;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.bollingerUptrendVolumeAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.bollingerDowntrendVolumeAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.bollingerSidewaysVolumeAdjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted RSI6 threshold for EMA strategy based on market trend
+  double getAdjustedEmaRsi6() {
+    final base = _rsi6LongThreshold;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.emaUptrendRsi6Adjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.emaDowntrendRsi6Adjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.emaSidewaysRsi6Adjust;
+      default:
+        return base;
+    }
+  }
+
+  /// Get adjusted volume multiplier for EMA strategy based on market trend
+  double getAdjustedEmaVolume() {
+    final base = _volumeMultiplier;
+    switch (_currentTrend) {
+      case MarketTrend.uptrend:
+        return base + AppConstants.emaUptrendVolumeAdjust;
+      case MarketTrend.downtrend:
+        return base + AppConstants.emaDowntrendVolumeAdjust;
+      case MarketTrend.sideways:
+        return base + AppConstants.emaSidewaysVolumeAdjust;
+      default:
+        return base;
+    }
   }
 
   @override

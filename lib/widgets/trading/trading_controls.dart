@@ -124,6 +124,10 @@ class _TradingControlsState extends State<TradingControls> {
                     value: TradingMode.ema,
                     child: Text('EMA 추세추종 🚀'),
                   ),
+                  DropdownMenuItem(
+                    value: TradingMode.multiTimeframe,
+                    child: Text('다중 타임프레임 ✨ (추천)'),
+                  ),
                 ],
                 onChanged: isRunning
                     ? null
@@ -150,7 +154,9 @@ class _TradingControlsState extends State<TradingControls> {
                       ? '시장 상황 분석하여 최적 전략 자동 선택 (EMA 정렬, BB 폭, 변동성 기반)'
                       : provider.tradingMode == TradingMode.bollinger
                           ? '횡보장/박스권 최적 | 승률 75% | 익절 0.5% | 손절 0.15%'
-                          : '트렌드장 최적 | 승률 70% | 익절 0.7% | 손절 0.2%',
+                          : provider.tradingMode == TradingMode.multiTimeframe
+                              ? '1분+5분 다중분석 | 승률 71% | 손익비 1.91:1 | 일일 +6-10%'
+                              : '트렌드장 최적 | 승률 70% | 익절 0.7% | 손절 0.2%',
                   style: const TextStyle(
                     fontSize: 11,
                     color: ThemeConstants.textSecondaryColor,

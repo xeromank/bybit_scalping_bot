@@ -10,9 +10,18 @@ import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Trading strategy mode
 enum TradingMode {
-  auto,       // Auto mode - selects best strategy based on market conditions
-  bollinger,  // Bollinger Band + RSI strategy (mean reversion)
-  ema,        // EMA crossover + RSI strategy (trend following)
+  auto,           // Auto mode - selects best strategy based on market conditions
+  bollinger,      // Bollinger Band + RSI strategy (mean reversion)
+  ema,            // EMA crossover + RSI strategy (trend following)
+  multiTimeframe, // Multi-timeframe RSI strategy (1min + 5min analysis)
+}
+
+/// Market trend classification (based on analysis of recent candles)
+enum MarketTrend {
+  uptrend,    // Bullish trend: price increased > threshold
+  downtrend,  // Bearish trend: price decreased > threshold
+  sideways,   // Ranging market: price change within ±threshold
+  unknown,    // Not yet analyzed
 }
 
 /// Bollinger Bands values

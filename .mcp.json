@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bybit": {
+      "command": "java",
+      "args": ["-jar", "coin-mcp-0.0.1.jar"]
+    }
+  }
+}

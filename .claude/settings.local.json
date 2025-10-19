@@ -5,9 +5,15 @@
       "Bash(sqlite3 \"/Users/xeroman.k/Library/Developer/CoreSimulator/Devices/0B6F8508-D54F-4D6D-A9ED-D65AA0DD5FD3/data/Containers/Data/Application/73FFC540-CB14-43B3-B46E-8E6168E923CC/Documents/trading.db\" \"SELECT datetime(timestamp/1000, ''unixepoch'', ''localtime'') as time, type, message FROM trade_logs WHERE symbol=''ETHUSDT'' AND (message LIKE ''%signal%'' OR message LIKE ''%Entry%'' OR message LIKE ''%Creating%'' OR message LIKE ''%Bollinger%'' OR message LIKE ''%RSI%'') ORDER BY timestamp DESC LIMIT 30;\")",
       "Bash(sqlite3 \"/Users/xeroman.k/Library/Developer/CoreSimulator/Devices/0B6F8508-D54F-4D6D-A9ED-D65AA0DD5FD3/data/Containers/Data/Application/73FFC540-CB14-43B3-B46E-8E6168E923CC/Documents/trading.db\" \"SELECT datetime(timestamp/1000, ''unixepoch'', ''localtime'') as time, type, message FROM trade_logs WHERE symbol=''ETHUSDT'' AND timestamp < 1729309834000 AND timestamp > 1729309200000 ORDER BY timestamp DESC LIMIT 50;\")",
       "Bash(sqlite3 \"/Users/xeroman.k/Library/Developer/CoreSimulator/Devices/0B6F8508-D54F-4D6D-A9ED-D65AA0DD5FD3/data/Containers/Data/Application/73FFC540-CB14-43B3-B46E-8E6168E923CC/Documents/trading.db\" \"SELECT datetime(timestamp/1000, ''unixepoch'', ''localtime'') as time, type, message FROM trade_logs WHERE type=''success'' OR message LIKE ''%Creating%'' OR message LIKE ''%leverage%'' ORDER BY timestamp DESC LIMIT 30;\")",
-      "Bash(sqlite3 \"/Users/xeroman.k/Library/Developer/CoreSimulator/Devices/0B6F8508-D54F-4D6D-A9ED-D65AA0DD5FD3/data/Containers/Data/Application/73FFC540-CB14-43B3-B46E-8E6168E923CC/Documents/trading.db\" \"SELECT \n  datetime(timestamp/1000, ''unixepoch'', ''localtime'') as time,\n  side,\n  entry_price,\n  tp_price,\n  sl_price,\n  signal_strength,\n  rsi6,\n  rsi14,\n  bollinger_upper,\n  bollinger_middle,\n  bollinger_lower,\n  (entry_price - bollinger_lower) as distance_from_lower,\n  volume,\n  volume_ma5\nFROM order_history \nORDER BY timestamp DESC \nLIMIT 3;\")"
+      "Bash(sqlite3 \"/Users/xeroman.k/Library/Developer/CoreSimulator/Devices/0B6F8508-D54F-4D6D-A9ED-D65AA0DD5FD3/data/Containers/Data/Application/73FFC540-CB14-43B3-B46E-8E6168E923CC/Documents/trading.db\" \"SELECT \n  datetime(timestamp/1000, ''unixepoch'', ''localtime'') as time,\n  side,\n  entry_price,\n  tp_price,\n  sl_price,\n  signal_strength,\n  rsi6,\n  rsi14,\n  bollinger_upper,\n  bollinger_middle,\n  bollinger_lower,\n  (entry_price - bollinger_lower) as distance_from_lower,\n  volume,\n  volume_ma5\nFROM order_history \nORDER BY timestamp DESC \nLIMIT 3;\")",
+      "Read(//Users/xeroman.k/.claude/**)",
+      "mcp__bybit__get_bybit_chart",
+      "mcp__bybit__get_bybit_rsi",
+      "Bash(python3 run_comprehensive_analysis.py)",
+      "Bash(flutter analyze)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enableAllProjectMcpServers": true
 }
