@@ -27,8 +27,8 @@ class AppConstants {
 
   // Bollinger Mode: RSI 14 Settings
   static const int defaultBollingerRsiPeriod = 14;
-  static const double defaultBollingerRsiOverbought = 70.0;
-  static const double defaultBollingerRsiOversold = 30.0;
+  static const double defaultBollingerRsiOverbought = 75.0;
+  static const double defaultBollingerRsiOversold = 25.0;
 
   // Bollinger Mode: Profit/Loss Targets (ROE%)
   static const double defaultBollingerProfitPercent = 5.0;  // Conservative scalping
