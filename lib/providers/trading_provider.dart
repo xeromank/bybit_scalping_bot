@@ -67,6 +67,9 @@ class TradingProvider extends ChangeNotifier {
   double _profitTargetPercent = AppConstants.defaultBollingerProfitPercent;
   double _stopLossPercent = AppConstants.defaultBollingerStopLossPercent;
 
+  // Automatic TP/SL based on signal strength
+  bool _useAutomaticTpSl = true; // Default to automatic
+
   // State
   bool _isRunning = false;
   Position? _currentPosition;
@@ -246,6 +249,9 @@ class TradingProvider extends ChangeNotifier {
   // Volume Filter Getters
   bool get useVolumeFilter => _useVolumeFilter;
   double get volumeMultiplier => _volumeMultiplier;
+
+  // TP/SL Getters
+  bool get useAutomaticTpSl => _useAutomaticTpSl;
 
   // Setters with validation
   Future<void> setSymbol(String value) async {
@@ -447,6 +453,87 @@ class TradingProvider extends ChangeNotifier {
       _volumeMultiplier = value;
       notifyListeners();
     }
+  }
+
+  // TP/SL Setter
+  void setUseAutomaticTpSl(bool value) {
+    if (!_isRunning) {
+      _useAutomaticTpSl = value;
+      notifyListeners();
+    }
+  }
+
+  /// Calculates dynamic TP/SL based on signal strength and Bollinger deviation
+  ///
+  /// Strategy:
+  /// - Strong signals (7-10): Quick profit-taking, wider SL for protection
+  /// - Medium signals (4-6): Larger TP target, wider SL for volatility
+  /// - Weak signals (1-3): Conservative approach, tighter SL to limit loss
+  ///
+  /// Bollinger deviation also affects TP/SL:
+  /// - Optimal zone (near band): Relaxed conditions
+  /// - Risk zone (far from band): Stricter conditions
+  Map<String, double> _calculateDynamicTpSl({
+    required double signalStrength,
+    required int leverage,
+    TechnicalAnalysis? analysis,
+    bool isLong = true,
+  }) {
+    double tpPercent;
+    double slPercent;
+
+    // Base TP/SL based on signal strength
+    if (signalStrength >= 7.0) {
+      // Strong signal: Quick profit-taking strategy
+      tpPercent = 3.0;  // Fast profit realization
+      slPercent = 5.0;  // Wide SL for protection
+    } else if (signalStrength >= 4.0) {
+      // Medium signal: Allow room for bigger moves
+      tpPercent = 6.0;  // Larger target
+      slPercent = 6.0;  // Wide SL for volatility
+    } else {
+      // Weak signal: Conservative approach
+      tpPercent = 4.0;  // Moderate target
+      slPercent = 4.0;  // Moderate SL
+    }
+
+    // Adjust for Bollinger deviation if in Bollinger mode
+    if (_tradingMode == TradingMode.bollinger && analysis?.bollingerBands != null) {
+      final bb = analysis!.bollingerBands!;
+      final price = analysis.currentPrice;
+
+      // Calculate distance from Bollinger band
+      final bandDistance = isLong
+          ? ((price - bb.lower) / bb.lower * 100).abs()  // Distance from lower band for Long
+          : ((price - bb.upper) / bb.upper * 100).abs(); // Distance from upper band for Short
+
+      if (bandDistance < 0.1) {
+        // Optimal zone: Price very close to band (< 0.1%)
+        // Increase TP, relax SL
+        tpPercent *= 1.2;
+        slPercent *= 1.3;
+      } else if (bandDistance > 0.5) {
+        // Risk zone: Price far from band (> 0.5%)
+        // Decrease TP, tighten SL
+        tpPercent *= 0.8;
+        slPercent *= 0.7;
+      }
+    }
+
+    // Ensure min/max limits
+    tpPercent = tpPercent.clamp(
+      AppConstants.minProfitTargetPercent,
+      AppConstants.maxProfitTargetPercent,
+    );
+    slPercent = slPercent.clamp(
+      AppConstants.minStopLossPercent,
+      AppConstants.maxStopLossPercent,
+    );
+
+    return {
+      'tp': tpPercent,
+      'sl': slPercent,
+    };
   }
 
   /// Auto-adjusts profit target and stop loss based on leverage
@@ -1207,17 +1294,39 @@ class TradingProvider extends ChangeNotifier {
       // Format qty to appropriate decimal places
       final qtyStr = qty.toStringAsFixed(stepDecimalPlaces);
 
-      // Use user-configured TP/SL values (from UI or auto-adjusted by leverage)
-      double effectiveProfitPercent = _profitTargetPercent;
-      double effectiveStopLossPercent = _stopLossPercent;
+      // Determine if this is a Long or Short position
+      final isLong = side == ApiConstants.orderSideBuy;
+
+      // Calculate TP/SL: Use automatic if enabled, otherwise use manual values
+      double effectiveProfitPercent;
+      double effectiveStopLossPercent;
+
+      if (_useAutomaticTpSl) {
+        // Calculate dynamic TP/SL based on signal strength and Bollinger deviation
+        final dynamicTpSl = _calculateDynamicTpSl(
+          signalStrength: signalStrength.totalScore,
+          leverage: leverageInt,
+          analysis: analysis,
+          isLong: isLong,
+        );
+        effectiveProfitPercent = dynamicTpSl['tp']!;
+        effectiveStopLossPercent = dynamicTpSl['sl']!;
+
+        _addLog(TradeLog.info(
+          '🎯 Auto TP/SL | Signal: ${signalStrength.totalScore.toStringAsFixed(1)}/10 → '
+          'TP: ${effectiveProfitPercent.toStringAsFixed(1)}% · SL: ${effectiveStopLossPercent.toStringAsFixed(1)}%',
+        ));
+      } else {
+        // Use manual TP/SL from UI
+        effectiveProfitPercent = _profitTargetPercent;
+        effectiveStopLossPercent = _stopLossPercent;
+      }
 
       // Calculate TP/SL prices based on ROE targets
       // ROE% = (profit / margin) * 100
       // For Long: profit = (exitPrice - entryPrice) * qty
       // For Short: profit = (entryPrice - exitPrice) * qty
       // margin = positionValue / leverage
-
-      final isLong = side == ApiConstants.orderSideBuy;
 
       // Calculate TP/SL prices from ROE percentages
       // TP/SL price movement = (ROE% / 100) * (entryPrice / leverage)

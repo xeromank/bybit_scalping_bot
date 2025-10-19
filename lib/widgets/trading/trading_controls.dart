@@ -546,7 +546,9 @@ class _TradingControlsState extends State<TradingControls> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'TP ${provider.profitTargetPercent.toStringAsFixed(1)}% · SL ${provider.stopLossPercent.toStringAsFixed(1)}%',
+                      provider.useAutomaticTpSl
+                          ? '자동 (신호 강도 기반)'
+                          : 'TP ${provider.profitTargetPercent.toStringAsFixed(1)}% · SL ${provider.stopLossPercent.toStringAsFixed(1)}%',
                       style: const TextStyle(
                         fontSize: 12,
                         color: ThemeConstants.primaryColor,
@@ -557,6 +559,37 @@ class _TradingControlsState extends State<TradingControls> {
                 ),
                 initiallyExpanded: false,
                 children: [
+                  // Auto TP/SL Checkbox
+                  CheckboxListTile(
+                    title: const Text(
+                      'TP/SL 자동 설정 (신호 강도 기반)',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: const Text(
+                      '강한 신호: 빠른 익절, 넓은 손절\n'
+                      '중간 신호: 큰 익절, 여유있는 손절\n'
+                      '약한 신호: 보수적 설정',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: ThemeConstants.textSecondaryColor,
+                      ),
+                    ),
+                    value: provider.useAutomaticTpSl,
+                    onChanged: isRunning
+                        ? null
+                        : (value) {
+                            if (value != null) {
+                              provider.setUseAutomaticTpSl(value);
+                            }
+                          },
+                    controlAffinity: ListTileControlAffinity.leading,
+                    dense: true,
+                  ),
+
+                  // Manual TP/SL input fields (disabled when auto is enabled)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
@@ -572,7 +605,7 @@ class _TradingControlsState extends State<TradingControls> {
                             inputFormatters: [
                               FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
                             ],
-                            enabled: !isRunning,
+                            enabled: !isRunning && !provider.useAutomaticTpSl,
                             onChanged: (value) {
                               final profit = double.tryParse(value);
                               if (profit != null) {
@@ -593,7 +626,7 @@ class _TradingControlsState extends State<TradingControls> {
                             inputFormatters: [
                               FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}')),
                             ],
-                            enabled: !isRunning,
+                            enabled: !isRunning && !provider.useAutomaticTpSl,
                             onChanged: (value) {
                               final stopLoss = double.tryParse(value);
                               if (stopLoss != null) {
