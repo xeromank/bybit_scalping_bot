@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_chart.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_order.dart';
@@ -295,6 +296,11 @@ class CoinoneTradingProvider extends ChangeNotifier {
       );
 
       _isBotRunning = true;
+
+      // Enable wakelock to keep screen on
+      await WakelockPlus.enable();
+      _logTrade('info', 'Screen will stay awake while bot is running');
+
       _logTrade('success', 'Trading bot started for $symbol');
     } catch (e) {
       _errorMessage = e.toString();
@@ -324,6 +330,9 @@ class CoinoneTradingProvider extends ChangeNotifier {
 
     // Disconnect WebSocket
     _wsClient.disconnect();
+
+    // Disable wakelock to allow screen to sleep
+    await WakelockPlus.disable();
 
     _logTrade('success', 'Trading bot stopped');
     notifyListeners();
