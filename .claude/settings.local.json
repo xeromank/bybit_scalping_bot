@@ -1,15 +1,26 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:bybit-exchange.github.io)",
-      "mcp__bybit__get_bybit_chart",
-      "Bash(dart run backtest_eth.dart)"
+      "Bash(flutter analyze lib/providers/coinone_trading_provider.dart lib/services/coinone/strategies/uptrend_strategy.dart)",
+      "Bash(flutter analyze lib/models/coinone/coinone_balance.dart lib/services/coinone/coinone_api_client.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/services/adaptive_strategy.dart)",
+      "Bash(flutter analyze lib/widgets/bybit/strategy_info_card.dart)",
+      "Bash(flutter analyze lib/screens/bybit_login_screen.dart lib/screens/bybit_trading_screen.dart lib/screens/coinone_trading_screen.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/strategy_info_card.dart lib/widgets/bybit/trade_logs_card.dart lib/screens/bybit_trading_screen.dart lib/screens/coinone_trading_screen.dart)",
+      "Bash(flutter analyze lib/screens/bybit_login_screen.dart lib/models/saved_credential.dart)",
+      "Bash(flutter analyze lib/screens/bybit_login_screen.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/providers/coinone_trading_provider.dart lib/widgets/bybit/trade_logs_card.dart lib/widgets/bybit/trading_controls.dart lib/screens/bybit_trading_screen.dart lib/screens/coinone_trading_screen.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/providers/coinone_trading_provider.dart lib/widgets/bybit/trading_controls.dart lib/screens/coinone_trading_screen.dart)",
+      "Bash(flutter analyze lib/providers/coinone_trading_provider.dart)",
+      "Bash(flutter analyze lib/screens/bybit_login_screen.dart lib/providers/auth_provider.dart lib/repositories/credential_repository.dart)",
+      "Bash(flutter analyze lib/providers/coinone_trading_provider.dart lib/screens/coinone_trading_screen.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/trading_controls.dart lib/widgets/bybit/trade_logs_card.dart lib/screens/bybit_trading_screen.dart lib/screens/coinone_trading_screen.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/trading_controls.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/trading_controls.dart lib/screens/bybit_trading_screen.dart)",
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart)"
     ],
     "deny": [],
     "ask": []
   },
-  "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "bybit"
-  ]
+  "enableAllProjectMcpServers": true
 }

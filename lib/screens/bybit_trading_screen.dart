@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/bybit_trading_provider.dart';
+import 'package:bybit_scalping_bot/providers/auth_provider.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/balance_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/market_condition_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/top_coins_selector.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/strategy_info_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/trading_controls.dart';
-import 'package:bybit_scalping_bot/widgets/bybit/position_display.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/positions_list.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/real_time_price_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/technical_indicators_card.dart';
+import 'package:bybit_scalping_bot/widgets/bybit/trade_logs_card.dart';
+import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
 
 /// Bybit Trading Screen (New Adaptive Strategy System)
 ///
@@ -39,6 +41,18 @@ class _BybitTradingScreenState extends State<BybitTradingScreen>
     super.dispose();
   }
 
+  Future<void> _handleLogout() async {
+    final authProvider = context.read<AuthProvider>();
+    await authProvider.logout();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const BybitLoginScreen()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -49,6 +63,44 @@ class _BybitTradingScreenState extends State<BybitTradingScreen>
           'Bybit 선물 거래',
           style: TextStyle(color: Colors.white),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white),
+            tooltip: '로그아웃',
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => AlertDialog(
+                  backgroundColor: const Color(0xFF2D2D2D),
+                  title: const Text(
+                    '로그아웃',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  content: const Text(
+                    '로그아웃 하시겠습니까?',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('취소'),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _handleLogout();
+                      },
+                      child: const Text(
+                        '로그아웃',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.blue,
@@ -187,6 +239,10 @@ class _BybitTradingScreenState extends State<BybitTradingScreen>
 
                 // Trading Controls
                 const TradingControls(),
+                const SizedBox(height: 16),
+
+                // Trade Logs Card
+                const TradeLogsCard(),
                 const SizedBox(height: 32),
               ],
             ),

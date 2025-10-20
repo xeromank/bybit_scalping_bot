@@ -9,6 +9,20 @@ enum SignalType {
   none,
 }
 
+/// Extension to add name getter for SignalType
+extension SignalTypeExtension on SignalType {
+  String get name {
+    switch (this) {
+      case SignalType.long:
+        return 'long';
+      case SignalType.short:
+        return 'short';
+      case SignalType.none:
+        return 'none';
+    }
+  }
+}
+
 /// Strategy configuration for a specific market condition
 class StrategyConfig {
   final double takeProfitPercent; // TP as percentage (e.g., 0.008 = 0.8%)

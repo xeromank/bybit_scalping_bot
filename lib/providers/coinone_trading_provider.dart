@@ -189,7 +189,13 @@ class CoinoneTradingProvider extends ChangeNotifier {
           _currentVolatility = _volatilityCalculator.classifyVolatility(_volatilityPercent);
         }
 
-        notifyListeners();
+        // Only notify if not disposed
+        try {
+          notifyListeners();
+        } catch (e) {
+          // Provider was disposed, ignore
+          debugPrint('[TechnicalIndicators] Provider disposed, stopping updates');
+        }
       } else if (result is Failure<CoinoneChartData>) {
         debugPrint('[TechnicalIndicators] Failed to fetch chart data: ${result.message}');
       }
@@ -894,10 +900,67 @@ class CoinoneTradingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ============================================================================
+  // TEST SIGNAL
+  // ============================================================================
+
+  /// Execute test signal (manual order for testing)
+  Future<void> executeTestSignal({required String side}) async {
+    if (_currentTicker == null) {
+      _logTrade('error', '테스트 시그널 실패: 현재가 없음');
+      return;
+    }
+
+    if (_activeOrder != null) {
+      _logTrade('error', '테스트 시그널 실패: 이미 주문 보유 중');
+      return;
+    }
+
+    try {
+      final currentPrice = _currentTicker!.last;
+
+      _logTrade('signal', '🧪 테스트 $side 시그널 - 가격: ₩${currentPrice.toStringAsFixed(0)}');
+
+      if (side.toLowerCase() == 'buy') {
+        // Calculate quantity based on order amount
+        final quantity = _orderKrwAmount / currentPrice;
+
+        // Log test order (실제 주문은 하지 않음 - 테스트용)
+        final tp = currentPrice * 1.012; // +1.2%
+        final sl = currentPrice * 0.975; // -2.5%
+
+        _logTrade(
+          'success',
+          '🧪 테스트 매수 주문 - ${quantity.toStringAsFixed(4)} $_symbol @ ₩${currentPrice.toStringAsFixed(0)}\n'
+          'TP: ₩${tp.toStringAsFixed(0)} (+1.2%)\n'
+          'SL: ₩${sl.toStringAsFixed(0)} (-2.5%)',
+        );
+
+      } else if (side.toLowerCase() == 'sell') {
+        // For sell test, just log (balance not tracked here)
+        _logTrade(
+          'success',
+          '🧪 테스트 매도 시그널 - $_symbol @ ₩${currentPrice.toStringAsFixed(0)}',
+        );
+      }
+
+      notifyListeners();
+    } catch (e) {
+      _logTrade('error', '테스트 시그널 실행 중 오류: $e');
+    }
+  }
+
   @override
   void dispose() {
+    // Stop bot and timer
     stopBot();
+
+    // Stop indicator updates
+    stopIndicatorUpdates();
+
+    // Close database
     _databaseService.close();
+
     super.dispose();
   }
 }

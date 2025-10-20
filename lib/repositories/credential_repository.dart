@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/models/credentials.dart';
 import 'package:bybit_scalping_bot/models/exchange_credentials.dart';
@@ -129,6 +130,10 @@ class CredentialRepository {
     try {
       final storageKey = '${exchange.identifier}_credentials';
 
+      if (kDebugMode) {
+        print('💾 CredentialRepository: ${exchange.displayName} 자격증명 저장 (키: $storageKey)');
+      }
+
       await _storageService.write(
         key: storageKey,
         value: json.encode({
@@ -136,6 +141,10 @@ class CredentialRepository {
           'apiSecret': apiSecret,
         }),
       );
+
+      if (kDebugMode) {
+        print('💾 CredentialRepository: 현재 자격증명 저장 완료, 최근 목록에 추가 중...');
+      }
 
       // Update recent credentials list
       await _addToRecentCredentials(
@@ -148,8 +157,15 @@ class CredentialRepository {
         ),
       );
 
+      if (kDebugMode) {
+        print('✅ CredentialRepository: ${exchange.displayName} 자격증명 저장 완료');
+      }
+
       return const Success(true);
     } catch (e) {
+      if (kDebugMode) {
+        print('❌ CredentialRepository: 저장 실패 - $e');
+      }
       return Failure(
         'Failed to save ${exchange.displayName} credentials',
         Exception(e.toString()),
@@ -191,9 +207,17 @@ class CredentialRepository {
   ) async {
     try {
       final storageKey = '${exchange.identifier}_recent';
+
+      if (kDebugMode) {
+        print('🔍 CredentialRepository: ${exchange.displayName} 최근 목록 조회 (키: $storageKey)');
+      }
+
       final data = await _storageService.read(key: storageKey);
 
       if (data == null) {
+        if (kDebugMode) {
+          print('📋 CredentialRepository: 저장된 목록 없음');
+        }
         return const Success([]);
       }
 
@@ -205,8 +229,15 @@ class CredentialRepository {
       // Sort by lastUsed descending
       credentials.sort((a, b) => b.lastUsed.compareTo(a.lastUsed));
 
+      if (kDebugMode) {
+        print('✅ CredentialRepository: ${credentials.length}개 자격증명 조회 완료');
+      }
+
       return Success(credentials);
     } catch (e) {
+      if (kDebugMode) {
+        print('❌ CredentialRepository: 조회 실패 - $e');
+      }
       return Failure(
         'Failed to retrieve recent ${exchange.displayName} credentials',
         Exception(e.toString()),
@@ -218,6 +249,10 @@ class CredentialRepository {
   Future<void> _addToRecentCredentials(ExchangeCredentials credentials) async {
     final storageKey = '${credentials.exchangeType.identifier}_recent';
 
+    if (kDebugMode) {
+      print('📋 CredentialRepository: 최근 목록에 추가 (키: $storageKey)');
+    }
+
     // Get existing list
     final existingData = await _storageService.read(key: storageKey);
     List<ExchangeCredentials> recentList = [];
@@ -227,6 +262,10 @@ class CredentialRepository {
       recentList = decoded
           .map((e) => ExchangeCredentials.fromJson(e as Map<String, dynamic>))
           .toList();
+
+      if (kDebugMode) {
+        print('📋 CredentialRepository: 기존 목록 ${recentList.length}개 로드됨');
+      }
     }
 
     // Remove if already exists (to avoid duplicates)
@@ -243,11 +282,19 @@ class CredentialRepository {
       recentList = recentList.sublist(0, 5);
     }
 
+    if (kDebugMode) {
+      print('📋 CredentialRepository: 최근 목록 ${recentList.length}개로 업데이트 중...');
+    }
+
     // Save back
     await _storageService.write(
       key: storageKey,
       value: json.encode(recentList.map((e) => e.toJson()).toList()),
     );
+
+    if (kDebugMode) {
+      print('✅ CredentialRepository: 최근 목록 저장 완료');
+    }
   }
 
   /// Delete credentials for specific exchange

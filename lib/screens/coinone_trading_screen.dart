@@ -76,20 +76,31 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _orderAmountController.dispose();
-
-    // Stop balance monitoring
-    context.read<CoinoneBalanceProvider>().stopMonitoring();
-
-    // Stop technical indicator updates
-    context.read<CoinoneTradingProvider>().stopIndicatorUpdates();
-
-    // Cleanup WebSocket
+    // Cancel all subscriptions FIRST to prevent further setState calls
     for (final subscription in _tickerSubscriptions) {
       subscription.cancel();
     }
+    _tickerSubscriptions.clear();
+
+    // Disconnect WebSocket
     _balanceWsClient.disconnect();
+
+    // Stop providers (use try-catch to handle already disposed providers)
+    try {
+      context.read<CoinoneBalanceProvider>().stopMonitoring();
+    } catch (e) {
+      // Provider already disposed, ignore
+    }
+
+    try {
+      context.read<CoinoneTradingProvider>().stopIndicatorUpdates();
+    } catch (e) {
+      // Provider already disposed, ignore
+    }
+
+    // Dispose controllers
+    _tabController.dispose();
+    _orderAmountController.dispose();
 
     super.dispose();
   }
@@ -271,6 +282,30 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
   }
 
   Future<void> _logout() async {
+    // Show confirmation dialog
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('로그아웃'),
+        content: const Text('로그아웃 하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              '로그아웃',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
     final authProvider = context.read<AuthProvider>();
 
     // Stop trading bot if running
@@ -288,8 +323,9 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
     if (!mounted) return;
 
     // Navigate to login screen
-    Navigator.of(context).pushReplacement(
+    Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const BybitLoginScreen()),
+      (route) => false,
     );
   }
 
@@ -802,6 +838,10 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
 
             // Trading controls
             _buildTradingControls(),
+            const SizedBox(height: ThemeConstants.spacingMedium),
+
+            // Test Signal Buttons
+            _buildTestSignalButtons(),
             const SizedBox(height: ThemeConstants.spacingMedium),
 
             // Bollinger Bands
@@ -2086,6 +2126,163 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
         log['message'] as String,
         style: TextStyle(fontSize: 12, color: color),
       ),
+    );
+  }
+
+  // ============================================================================
+  // Test Signal Buttons
+  // ============================================================================
+
+  Widget _buildTestSignalButtons() {
+    return Consumer<CoinoneTradingProvider>(
+      builder: (context, provider, child) {
+        return Card(
+          elevation: 4,
+          color: const Color(0xFF2D2D2D),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.science, color: Colors.amber, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      '🧪 시그널 테스트 (수동 주문)',
+                      style: TextStyle(
+                        color: Colors.grey[300],
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: provider.activeOrder == null
+                            ? () async {
+                                final shouldExecute = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    backgroundColor: const Color(0xFF2D2D2D),
+                                    title: const Text(
+                                      '테스트 매수 시그널',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    content: const Text(
+                                      '현재가로 매수 주문을 생성합니다.\n\n'
+                                      '테스트용 로그만 남깁니다.\n'
+                                      'TP: +1.2%, SL: -2.5%',
+                                      style: TextStyle(color: Colors.white70),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: const Text(
+                                          '실행',
+                                          style: TextStyle(color: Colors.green),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (shouldExecute == true) {
+                                  await provider.executeTestSignal(side: 'buy');
+                                }
+                              }
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          disabledBackgroundColor: Colors.grey[700],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.shopping_cart, size: 20),
+                        label: const Text(
+                          '매수 테스트',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: provider.activeOrder == null
+                            ? () async {
+                                final shouldExecute = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    backgroundColor: const Color(0xFF2D2D2D),
+                                    title: const Text(
+                                      '테스트 매도 시그널',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    content: Text(
+                                      '현재가로 매도 주문을 생성합니다.\n\n'
+                                      '코인: ${provider.symbol}\n'
+                                      '테스트용 로그만 남깁니다.',
+                                      style: const TextStyle(color: Colors.white70),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: const Text(
+                                          '실행',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (shouldExecute == true) {
+                                  await provider.executeTestSignal(side: 'sell');
+                                }
+                              }
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          disabledBackgroundColor: Colors.grey[700],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.sell, size: 20),
+                        label: const Text(
+                          '매도 테스트',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (provider.activeOrder != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      '⚠️ 주문이 있어 테스트 불가',
+                      style: TextStyle(
+                        color: Colors.orange[300],
+                        fontSize: 11,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

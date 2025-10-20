@@ -207,6 +207,167 @@ class _TradingControlsState extends State<TradingControls> {
                     ),
                   ),
                 ],
+
+                // Test Signal Buttons
+                const SizedBox(height: 16),
+                const Divider(color: Colors.grey),
+                const SizedBox(height: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🧪 시그널 테스트 (실제 주문)',
+                      style: TextStyle(
+                        color: Colors.grey[400],
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '⚠️ 실제로 포지션이 생성됩니다 (TP/SL 포함)',
+                      style: TextStyle(
+                        color: Colors.orange[300],
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: !provider.allPositions.any((p) =>
+                          p.symbol == provider.selectedSymbol &&
+                          double.parse(p.size) > 0
+                        )
+                            ? () async {
+                                final shouldExecute = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    backgroundColor: const Color(0xFF2D2D2D),
+                                    title: const Text(
+                                      '⚠️ 실제 LONG 주문',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    content: Text(
+                                      '실제로 주문이 실행됩니다!\n\n'
+                                      '심볼: ${provider.selectedSymbol}\n'
+                                      '투자금: ${provider.investmentAmount} USDT\n'
+                                      '레버리지: ${provider.leverage}x\n'
+                                      'TP: +1% (자동 청산)\n'
+                                      'SL: -0.5% (자동 청산)',
+                                      style: const TextStyle(color: Colors.white70),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: const Text(
+                                          '실행',
+                                          style: TextStyle(color: Colors.green),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (shouldExecute == true) {
+                                  await provider.executeTestSignal(side: 'long');
+                                }
+                              }
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          disabledBackgroundColor: Colors.grey[700],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.arrow_upward, size: 20),
+                        label: const Text(
+                          'LONG 테스트',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: !provider.allPositions.any((p) =>
+                          p.symbol == provider.selectedSymbol &&
+                          double.parse(p.size) > 0
+                        )
+                            ? () async {
+                                final shouldExecute = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    backgroundColor: const Color(0xFF2D2D2D),
+                                    title: const Text(
+                                      '⚠️ 실제 SHORT 주문',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                    content: Text(
+                                      '실제로 주문이 실행됩니다!\n\n'
+                                      '심볼: ${provider.selectedSymbol}\n'
+                                      '투자금: ${provider.investmentAmount} USDT\n'
+                                      '레버리지: ${provider.leverage}x\n'
+                                      'TP: -1% (자동 청산)\n'
+                                      'SL: +0.5% (자동 청산)',
+                                      style: const TextStyle(color: Colors.white70),
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, false),
+                                        child: const Text('취소'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context, true),
+                                        child: const Text(
+                                          '실행',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (shouldExecute == true) {
+                                  await provider.executeTestSignal(side: 'short');
+                                }
+                              }
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          disabledBackgroundColor: Colors.grey[700],
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        icon: const Icon(Icons.arrow_downward, size: 20),
+                        label: const Text(
+                          'SHORT 테스트',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (provider.allPositions.any((p) =>
+                  p.symbol == provider.selectedSymbol &&
+                  double.parse(p.size) > 0
+                ))
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(
+                      '⚠️ ${provider.selectedSymbol} 포지션이 있어 테스트 불가',
+                      style: TextStyle(
+                        color: Colors.orange[300],
+                        fontSize: 11,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
               ],
             ),
           ),

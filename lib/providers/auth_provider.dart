@@ -142,6 +142,10 @@ class AuthProvider extends ChangeNotifier {
       }
 
       // Save credentials for the exchange
+      if (kDebugMode) {
+        print('🔐 AuthProvider: ${exchange.displayName} 자격증명 저장 시도...');
+      }
+
       final saveResult = await _credentialRepository.saveExchangeCredentials(
         exchange,
         credentials.apiKey,
@@ -152,7 +156,14 @@ class AuthProvider extends ChangeNotifier {
       if (saveResult.isFailure) {
         _errorMessage = saveResult.errorOrNull ?? 'Failed to save credentials';
         _setLoading(false);
+        if (kDebugMode) {
+          print('❌ AuthProvider: 자격증명 저장 실패 - $_errorMessage');
+        }
         return Failure(_errorMessage!);
+      }
+
+      if (kDebugMode) {
+        print('✅ AuthProvider: ${exchange.displayName} 자격증명 저장 성공');
       }
 
       // Update state

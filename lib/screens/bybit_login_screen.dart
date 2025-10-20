@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/auth_provider.dart';
 import 'package:bybit_scalping_bot/core/enums/exchange_type.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
+import 'package:bybit_scalping_bot/models/exchange_credentials.dart';
 import 'package:bybit_scalping_bot/screens/bybit_trading_screen.dart';
+import 'package:bybit_scalping_bot/screens/coinone_trading_screen.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
-/// Bybit Login Screen
+/// Universal Login Screen
 ///
-/// Simple login screen for Bybit API credentials
+/// Login screen with exchange selection (Bybit or Coinone) and saved credentials
 class BybitLoginScreen extends StatefulWidget {
   const BybitLoginScreen({super.key});
 
@@ -23,12 +25,70 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
 
   bool _isLoading = false;
   bool _obscureSecret = true;
+  ExchangeType _selectedExchange = ExchangeType.bybit;
+
+  // Saved credentials
+  List<ExchangeCredentials> _savedCredentials = [];
+  ExchangeCredentials? _selectedCredential;
+
+  @override
+  void initState() {
+    super.initState();
+    // Load credentials after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSavedCredentials();
+    });
+  }
 
   @override
   void dispose() {
     _apiKeyController.dispose();
     _apiSecretController.dispose();
     super.dispose();
+  }
+
+  /// Load saved credentials for current exchange
+  Future<void> _loadSavedCredentials() async {
+    try {
+      final authProvider = context.read<AuthProvider>();
+      final credentials = await authProvider.getRecentCredentials(_selectedExchange);
+
+      Logger.info('로그인 화면: ${_selectedExchange.displayName}에 저장된 자격증명 ${credentials.length}개 로드됨');
+
+      setState(() {
+        _savedCredentials = credentials;
+      });
+    } catch (e) {
+      Logger.error('Error loading saved credentials: $e');
+      setState(() {
+        _savedCredentials = [];
+      });
+    }
+  }
+
+  /// Select a saved credential
+  void _selectCredential(ExchangeCredentials? credential) {
+    setState(() {
+      _selectedCredential = credential;
+      if (credential != null) {
+        _apiKeyController.text = credential.apiKey;
+        _apiSecretController.text = credential.apiSecret;
+      } else {
+        _apiKeyController.clear();
+        _apiSecretController.clear();
+      }
+    });
+  }
+
+  /// Change exchange and reload credentials
+  void _changeExchange(ExchangeType exchange) {
+    setState(() {
+      _selectedExchange = exchange;
+      _selectedCredential = null;
+      _apiKeyController.clear();
+      _apiSecretController.clear();
+    });
+    _loadSavedCredentials();
   }
 
   Future<void> _handleLogin() async {
@@ -45,7 +105,7 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
       final result = await authProvider.login(
         apiKey: _apiKeyController.text.trim(),
         apiSecret: _apiSecretController.text.trim(),
-        exchange: ExchangeType.bybit,
+        exchange: _selectedExchange,
       );
 
       if (!mounted) return;
@@ -53,12 +113,20 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
       switch (result) {
         case Success(:final data):
           if (data) {
-            Logger.success('Bybit 로그인 성공');
+            final exchangeName = _selectedExchange == ExchangeType.bybit ? 'Bybit' : 'Coinone';
+            Logger.success('$exchangeName 로그인 성공 및 자격증명 저장 완료');
 
-            // Navigate to trading screen
+            // Reload saved credentials to confirm save
+            await _loadSavedCredentials();
+
+            if (!mounted) return;
+
+            // Navigate to appropriate trading screen
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => const BybitTradingScreen(),
+                builder: (context) => _selectedExchange == ExchangeType.bybit
+                    ? const BybitTradingScreen()
+                    : const CoinoneTradingScreen(),
               ),
             );
           } else {
@@ -114,10 +182,10 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                   const SizedBox(height: 16),
 
                   // Title
-                  const Text(
-                    'Bybit 선물 거래',
+                  Text(
+                    _selectedExchange == ExchangeType.bybit ? 'Bybit 선물 거래' : 'Coinone 현물 거래',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -132,7 +200,191 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 32),
+
+                  // Exchange Selection
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2D2D2D),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _isLoading ? null : () {
+                              _changeExchange(ExchangeType.bybit);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: _selectedExchange == ExchangeType.bybit
+                                    ? Colors.blue
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.trending_up,
+                                    color: _selectedExchange == ExchangeType.bybit
+                                        ? Colors.white
+                                        : Colors.grey[500],
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Bybit (선물)',
+                                    style: TextStyle(
+                                      color: _selectedExchange == ExchangeType.bybit
+                                          ? Colors.white
+                                          : Colors.grey[500],
+                                      fontWeight: _selectedExchange == ExchangeType.bybit
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _isLoading ? null : () {
+                              _changeExchange(ExchangeType.coinone);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                color: _selectedExchange == ExchangeType.coinone
+                                    ? Colors.orange
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.account_balance_wallet,
+                                    color: _selectedExchange == ExchangeType.coinone
+                                        ? Colors.white
+                                        : Colors.grey[500],
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Coinone (현물)',
+                                    style: TextStyle(
+                                      color: _selectedExchange == ExchangeType.coinone
+                                          ? Colors.white
+                                          : Colors.grey[500],
+                                      fontWeight: _selectedExchange == ExchangeType.coinone
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Saved Credentials Dropdown (Always show)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.history, color: Colors.blue, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              '저장된 계정 선택',
+                              style: TextStyle(
+                                color: Colors.grey[300],
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        if (_savedCredentials.isEmpty)
+                          Text(
+                            '저장된 계정이 없습니다. 로그인하면 자동으로 저장됩니다.',
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 11,
+                            ),
+                          )
+                        else
+                          DropdownButtonFormField<ExchangeCredentials>(
+                            value: _selectedCredential,
+                            dropdownColor: const Color(0xFF2D2D2D),
+                            decoration: InputDecoration(
+                              filled: true,
+                              fillColor: const Color(0xFF1E1E1E),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                            hint: Text(
+                              '새로운 계정으로 로그인',
+                              style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                            ),
+                            items: [
+                              DropdownMenuItem<ExchangeCredentials>(
+                                value: null,
+                                child: Text(
+                                  '새로운 계정',
+                                  style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                                ),
+                              ),
+                              ..._savedCredentials.map((cred) {
+                                final label = cred.label ?? '계정 ${_savedCredentials.indexOf(cred) + 1}';
+                                final maskedKey = cred.apiKey.length > 8
+                                    ? '${cred.apiKey.substring(0, 8)}...'
+                                    : cred.apiKey;
+                                return DropdownMenuItem<ExchangeCredentials>(
+                                  value: cred,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        label,
+                                        style: TextStyle(color: Colors.grey[300], fontSize: 13),
+                                      ),
+                                      Text(
+                                        maskedKey,
+                                        style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                            onChanged: _isLoading ? null : _selectCredential,
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
                   // API Key Input
                   TextFormField(
@@ -142,7 +394,9 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                     decoration: InputDecoration(
                       labelText: 'API Key',
                       labelStyle: TextStyle(color: Colors.grey[400]),
-                      hintText: 'Bybit API 키를 입력하세요',
+                      hintText: _selectedExchange == ExchangeType.bybit
+                          ? 'Bybit API 키를 입력하세요'
+                          : 'Coinone API 키를 입력하세요',
                       hintStyle: TextStyle(color: Colors.grey[600]),
                       filled: true,
                       fillColor: const Color(0xFF2D2D2D),
@@ -170,7 +424,9 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                     decoration: InputDecoration(
                       labelText: 'API Secret',
                       labelStyle: TextStyle(color: Colors.grey[400]),
-                      hintText: 'Bybit API Secret을 입력하세요',
+                      hintText: _selectedExchange == ExchangeType.bybit
+                          ? 'Bybit API Secret을 입력하세요'
+                          : 'Coinone API Secret을 입력하세요',
                       hintStyle: TextStyle(color: Colors.grey[600]),
                       filled: true,
                       fillColor: const Color(0xFF2D2D2D),
@@ -237,18 +493,18 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: (_selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      border: Border.all(color: (_selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange).withOpacity(0.3)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Icons.info_outline,
-                              color: Colors.blue,
+                              color: _selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange,
                               size: 20,
                             ),
                             const SizedBox(width: 8),
@@ -264,10 +520,15 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '• 선물 거래 권한 필요\n'
-                          '• 포지션 조회 권한 필요\n'
-                          '• 계좌 정보 조회 권한 필요\n'
-                          '• 개발 중에는 Testnet 사용 권장',
+                          _selectedExchange == ExchangeType.bybit
+                              ? '• 선물 거래 권한 필요\n'
+                                '• 포지션 조회 권한 필요\n'
+                                '• 계좌 정보 조회 권한 필요\n'
+                                '• 개발 중에는 Testnet 사용 권장'
+                              : '• 현물 거래 권한 필요\n'
+                                '• 계좌 조회 권한 필요\n'
+                                '• 출금 권한 선택적\n'
+                                '• 소액으로 테스트 후 운영',
                           style: TextStyle(
                             color: Colors.grey[400],
                             fontSize: 12,

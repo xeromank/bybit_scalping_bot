@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:bybit_scalping_bot/models/position.dart';
+import 'package:bybit_scalping_bot/models/order.dart';
 import 'package:bybit_scalping_bot/models/top_coin.dart';
 import 'package:bybit_scalping_bot/models/market_condition.dart';
 import 'package:bybit_scalping_bot/models/wallet_balance.dart';
@@ -9,6 +10,7 @@ import 'package:bybit_scalping_bot/services/market_analyzer.dart';
 import 'package:bybit_scalping_bot/services/adaptive_strategy.dart';
 import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
+import 'package:bybit_scalping_bot/services/bybit/bybit_database_service.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
@@ -24,6 +26,10 @@ class BybitTradingProvider extends ChangeNotifier {
   final BybitRepository _repository;
   final BybitPublicWebSocketClient? _publicWsClient;
   final BybitWebSocketClient? _privateWsClient;
+  final BybitDatabaseService _databaseService = BybitDatabaseService();
+
+  // Trade logs (for UI display)
+  List<Map<String, dynamic>> _tradeLogs = [];
 
   // ============================================================================
   // CONFIGURATION
@@ -152,6 +158,9 @@ class BybitTradingProvider extends ChangeNotifier {
 
   // Analysis details for UI
   String get analysisReasoning => _analysisResult?.reasoning ?? '';
+
+  // Trade logs
+  List<Map<String, dynamic>> get tradeLogs => _tradeLogs;
   double get analysisConfidence => _analysisResult?.confidence ?? 0.0;
 
   // ============================================================================
@@ -751,7 +760,13 @@ class BybitTradingProvider extends ChangeNotifier {
       _currentSignal = signal;
 
       if (signal.hasSignal) {
-        Logger.debug('BybitTradingProvider: ${signal.type.name.toUpperCase()} signal (${(signal.confidence * 100).toStringAsFixed(0)}%) - ${signal.reasoning}');
+        final signalType = signal.type.name.toUpperCase();
+        final signalInfo = '$signalType 시그널 (신뢰도: ${(signal.confidence * 100).toStringAsFixed(0)}%) - ${signal.reasoning}';
+
+        Logger.debug('BybitTradingProvider: $signalInfo');
+
+        // Log signal to database
+        _logTrade('SIGNAL', signalInfo);
 
         // TODO: Execute trade based on signal
         // if (_isRunning && _currentPosition == null) {
@@ -766,6 +781,130 @@ class BybitTradingProvider extends ChangeNotifier {
   }
 
   // ============================================================================
+  // TEST SIGNAL
+  // ============================================================================
+
+  /// Test signal execution (simulates a real signal for testing)
+  Future<void> executeTestSignal({required String side}) async {
+    if (_currentPrice == null) {
+      Logger.error('Cannot execute test signal: No current price available');
+      await _logTrade('ERROR', '테스트 시그널 실패: 현재가 없음');
+      return;
+    }
+
+    // Check if CURRENT SYMBOL has position (ignore other symbols like BTC when trading ETH)
+    final hasSymbolPosition = _allPositions.any((p) =>
+      p.symbol == _selectedSymbol && double.parse(p.size) > 0
+    );
+
+    if (hasSymbolPosition) {
+      Logger.warning('Cannot execute test signal: $_selectedSymbol position already exists');
+      await _logTrade('ERROR', '테스트 시그널 실패: $_selectedSymbol 포지션이 이미 존재함');
+      return;
+    }
+
+    try {
+      Logger.debug('🧪 테스트 시그널 실행: $side @ \$${_currentPrice!.toStringAsFixed(2)}');
+
+      // Create test signal with strategy config
+      final testStrategyConfig = StrategyConfig(
+        takeProfitPercent: 0.01,  // 1%
+        stopLossPercent: 0.005,    // 0.5%
+        recommendedLeverage: int.parse(_leverage),
+        useTrailingStop: false,
+        trailingStopTrigger: 0.01,
+        description: '테스트 시그널',
+      );
+
+      final testSignal = TradingSignal(
+        type: side.toLowerCase() == 'long' ? SignalType.long : SignalType.short,
+        confidence: 1.0,
+        reasoning: '테스트 시그널 (수동 실행)',
+        entryPrice: _currentPrice!,
+        stopLossPrice: side.toLowerCase() == 'long'
+            ? _currentPrice! * 0.995  // -0.5% for long
+            : _currentPrice! * 1.005, // +0.5% for short
+        takeProfitPrice: side.toLowerCase() == 'long'
+            ? _currentPrice! * 1.01   // +1% for long
+            : _currentPrice! * 0.99,  // -1% for short
+        strategyConfig: testStrategyConfig,
+      );
+
+      await _logTrade('SIGNAL', '🧪 테스트 $side 시그널 - 가격: \$${_currentPrice!.toStringAsFixed(2)}');
+
+      // Calculate quantity based on investment amount
+      final leverage = int.parse(_leverage);
+      final rawQuantity = (_investmentAmount * leverage) / _currentPrice!;
+
+      // Round quantity based on symbol (BTC: 3 decimals, ETH: 2 decimals, others: 1 decimal)
+      int decimals = 3; // Default for BTC
+      if (_selectedSymbol.contains('ETH')) {
+        decimals = 2;
+      } else if (!_selectedSymbol.contains('BTC')) {
+        decimals = 1;
+      }
+
+      // Round to appropriate precision
+      final quantity = double.parse(rawQuantity.toStringAsFixed(decimals));
+
+      Logger.debug('주문 수량: $quantity (원본: ${rawQuantity.toStringAsFixed(6)}, 정밀도: $decimals, 투자금: $_investmentAmount USDT, 레버리지: ${leverage}x)');
+
+      // Log order info
+      Logger.success('✅ 테스트 시그널: $side 포지션');
+      await _logTrade(
+        'SIGNAL',
+        '🧪 주문 준비 - $side $quantity $_selectedSymbol @ \$${_currentPrice!.toStringAsFixed(2)}\n'
+        'TP: \$${testSignal.takeProfitPrice!.toStringAsFixed(2)} (+${(testStrategyConfig.takeProfitPercent * 100).toStringAsFixed(2)}%)\n'
+        'SL: \$${testSignal.stopLossPrice!.toStringAsFixed(2)} (-${(testStrategyConfig.stopLossPercent * 100).toStringAsFixed(2)}%)',
+      );
+
+      // 실제 주문 실행
+      // TP/SL 설정 방식:
+      // 1. 주문 생성 시 TP/SL을 함께 설정 (Bybit API 지원)
+      // 2. 포지션 종료는 TP/SL 도달 시 자동 청산됨
+      // 3. 중간에 TP/SL 변경 원하면 setTradingStop API 사용
+
+      Logger.info('📤 실제 주문 실행 중...');
+
+      final orderResult = await _repository.createOrder(
+        request: OrderRequest(
+          symbol: _selectedSymbol,
+          side: side.toLowerCase() == 'long' ? 'Buy' : 'Sell',
+          orderType: 'Market',
+          qty: quantity.toString(), // Use exact decimal representation
+          takeProfit: testSignal.takeProfitPrice!.toStringAsFixed(2),
+          stopLoss: testSignal.stopLossPrice!.toStringAsFixed(2),
+          tpTriggerBy: 'LastPrice',  // TP 트리거 가격 기준
+          slTriggerBy: 'LastPrice',  // SL 트리거 가격 기준
+        ),
+      );
+
+      switch (orderResult) {
+        case Success(:final data):
+          Logger.success('✅ 주문 성공: ${data.orderId}');
+          await _logTrade(
+            'SUCCESS',
+            '✅ 주문 체결 완료 - ${data.orderId}\n'
+            '$side ${quantity.toStringAsFixed(4)} @ \$${_currentPrice!.toStringAsFixed(2)}\n'
+            'TP: \$${testSignal.takeProfitPrice!.toStringAsFixed(2)}\n'
+            'SL: \$${testSignal.stopLossPrice!.toStringAsFixed(2)}',
+          );
+
+          // Position will be updated automatically via WebSocket
+
+        case Failure(:final message):
+          Logger.error('❌ 주문 실패: $message');
+          await _logTrade('ERROR', '❌ 주문 실패: $message');
+      }
+
+      notifyListeners();
+    } catch (e) {
+      Logger.error('테스트 시그널 실행 중 오류: $e');
+      await _logTrade('ERROR', '테스트 시그널 실행 중 오류: $e');
+    }
+  }
+
+  // ============================================================================
   // BOT CONTROL
   // ============================================================================
   Future<void> startBot() async {
@@ -774,6 +913,12 @@ class BybitTradingProvider extends ChangeNotifier {
     Logger.debug('BybitTradingProvider: Starting bot...');
 
     _isRunning = true;
+
+    // Log bot start
+    await _logTrade('INFO', '봇 시작 - $_selectedSymbol, 투자금: $_investmentAmount USDT, 레버리지: ${_leverage}x');
+
+    // Load trade logs
+    await loadTradeLogs();
 
     // Start market analysis timer (every 5 minutes)
     _marketAnalysisTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
@@ -814,6 +959,9 @@ class BybitTradingProvider extends ChangeNotifier {
 
     _lastSignalCheck = null;
 
+    // Log bot stop
+    await _logTrade('INFO', '봇 중지');
+
     Logger.success('BybitTradingProvider: Bot stopped!');
     notifyListeners();
   }
@@ -832,6 +980,50 @@ class BybitTradingProvider extends ChangeNotifier {
     if (!_isRunning) {
       _leverage = leverage;
       notifyListeners();
+    }
+  }
+
+  // ============================================================================
+  // TRADE LOGGING
+  // ============================================================================
+
+  /// Load recent trade logs from database
+  Future<void> loadTradeLogs({int limit = 100}) async {
+    try {
+      _tradeLogs = await _databaseService.getRecentTradeLogs(
+        limit: limit,
+        symbol: _selectedSymbol,
+      );
+      notifyListeners();
+    } catch (e) {
+      Logger.error('Failed to load trade logs: $e');
+    }
+  }
+
+  /// Log a trade message to database
+  Future<void> _logTrade(String type, String message) async {
+    try {
+      await _databaseService.insertTradeLog(
+        type: type,
+        message: message,
+        symbol: _selectedSymbol,
+      );
+
+      // Reload logs for UI
+      await loadTradeLogs();
+    } catch (e) {
+      Logger.error('Failed to log trade: $e');
+    }
+  }
+
+  /// Clear all trade logs
+  Future<void> clearTradeLogs() async {
+    try {
+      await _databaseService.deleteAllTradeLogs();
+      _tradeLogs = [];
+      notifyListeners();
+    } catch (e) {
+      Logger.error('Failed to clear trade logs: $e');
     }
   }
 
