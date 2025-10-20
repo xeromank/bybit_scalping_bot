@@ -17,7 +17,8 @@
       "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/trading_controls.dart lib/widgets/bybit/trade_logs_card.dart lib/screens/bybit_trading_screen.dart lib/screens/coinone_trading_screen.dart)",
       "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/trading_controls.dart)",
       "Bash(flutter analyze lib/providers/bybit_trading_provider.dart lib/widgets/bybit/trading_controls.dart lib/screens/bybit_trading_screen.dart)",
-      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart)"
+      "Bash(flutter analyze lib/providers/bybit_trading_provider.dart)",
+      "Bash(flutter analyze lib/services/adaptive_strategy.dart lib/providers/bybit_trading_provider.dart lib/widgets/bybit/strategy_info_card.dart)"
     ],
     "deny": [],
     "ask": []

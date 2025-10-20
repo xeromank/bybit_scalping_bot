@@ -9,17 +9,15 @@ enum SignalType {
   none,
 }
 
-/// Extension to add name getter for SignalType
-extension SignalTypeExtension on SignalType {
-  String get name {
-    switch (this) {
-      case SignalType.long:
-        return 'long';
-      case SignalType.short:
-        return 'short';
-      case SignalType.none:
-        return 'none';
-    }
+/// Helper function to convert SignalType to string (avoids .name compatibility issues)
+String signalTypeToString(SignalType type) {
+  switch (type) {
+    case SignalType.long:
+      return 'long';
+    case SignalType.short:
+      return 'short';
+    case SignalType.none:
+      return 'none';
   }
 }
 

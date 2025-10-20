@@ -760,8 +760,8 @@ class BybitTradingProvider extends ChangeNotifier {
       _currentSignal = signal;
 
       if (signal.hasSignal) {
-        final signalType = signal.type.name.toUpperCase();
-        final signalInfo = '$signalType 시그널 (신뢰도: ${(signal.confidence * 100).toStringAsFixed(0)}%) - ${signal.reasoning}';
+        final signalTypeStr = signalTypeToString(signal.type).toUpperCase();
+        final signalInfo = '$signalTypeStr 시그널 (신뢰도: ${(signal.confidence * 100).toStringAsFixed(0)}%) - ${signal.reasoning}';
 
         Logger.debug('BybitTradingProvider: $signalInfo');
 

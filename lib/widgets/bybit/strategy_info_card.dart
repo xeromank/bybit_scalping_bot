@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/bybit_trading_provider.dart';
+import 'package:bybit_scalping_bot/services/adaptive_strategy.dart';
 
 /// Strategy Information Card
 ///
@@ -181,7 +182,8 @@ class StrategyInfoCard extends StatelessWidget {
   }
 
   Widget _buildSignalDisplay(signal) {
-    final isLong = signal.type.name == 'long';
+    final signalTypeStr = signalTypeToString(signal.type);
+    final isLong = signalTypeStr == 'long';
     final color = isLong ? Colors.green : Colors.red;
     final icon = isLong ? Icons.arrow_upward : Icons.arrow_downward;
 
@@ -203,7 +205,7 @@ class StrategyInfoCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      '${signal.type.name.toUpperCase()} 신호',
+                      '${signalTypeStr.toUpperCase()} 신호',
                       style: TextStyle(
                         color: color,
                         fontSize: 15,
