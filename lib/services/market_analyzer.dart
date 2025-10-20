@@ -58,9 +58,21 @@ class MarketAnalyzer {
     Logger.debug('MarketAnalyzer: Price change = ${(priceChange * 100).toStringAsFixed(2)}%');
 
     // 2. Calculate average RSI (recent 10 candles)
+    Logger.debug('MarketAnalyzer: 📊 RSI 계산 시작');
+    Logger.debug('MarketAnalyzer: - 총 캔들 개수: ${closePrices.length}개');
+    Logger.debug('MarketAnalyzer: - 최근 5개 가격: ${closePrices.length >= 5 ? closePrices.sublist(closePrices.length - 5).map((p) => p.toStringAsFixed(2)).join(", ") : closePrices.map((p) => p.toStringAsFixed(2)).join(", ")}');
+
     final rsiValues = calculateRSISeries(closePrices, 14);
+    Logger.debug('MarketAnalyzer: - RSI(14) 계산 완료: ${rsiValues.length}개 값');
+    if (rsiValues.length >= 10) {
+      final recentRSI = rsiValues.sublist(rsiValues.length - 10);
+      Logger.debug('MarketAnalyzer: - 최근 10개 RSI: ${recentRSI.map((r) => r.toStringAsFixed(2)).join(", ")}');
+    } else if (rsiValues.isNotEmpty) {
+      Logger.debug('MarketAnalyzer: - 전체 RSI: ${rsiValues.map((r) => r.toStringAsFixed(2)).join(", ")}');
+    }
+
     final avgRsi = _calculateAverageRSI(rsiValues, lookback: 10);
-    Logger.debug('MarketAnalyzer: Average RSI = ${avgRsi.toStringAsFixed(2)}');
+    Logger.debug('MarketAnalyzer: ✅ 평균 RSI(최근 10개) = ${avgRsi.toStringAsFixed(2)}');
 
     // 3. Calculate Bollinger Band width (volatility indicator)
     final bb = calculateBollingerBandsDefault(closePrices);
@@ -156,26 +168,42 @@ class MarketAnalyzer {
     int bearishScore = 0;
     final List<String> reasons = [];
 
-    // Score based on price change
-    if (priceChange > 0.03) {
-      // +3% or more
+    // Score based on price change (20 candles) - More granular scoring
+    if (priceChange > 0.04) {
+      // +4% or more
+      bullishScore += 4;
+      reasons.add('매우 강한 상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else if (priceChange > 0.02) {
+      // +2% to +4%
       bullishScore += 3;
       reasons.add('강한 가격 상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
     } else if (priceChange > 0.01) {
-      // +1% to +3%
+      // +1% to +2%
       bullishScore += 2;
       reasons.add('가격 상승 중 (+${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange > -0.005 && priceChange < 0.005) {
-      // -0.5% to +0.5%
+    } else if (priceChange > 0.003) {
+      // +0.3% to +1%
+      bullishScore += 1;
+      reasons.add('약한 상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else if (priceChange >= -0.003 && priceChange <= 0.003) {
+      // -0.3% to +0.3%
       reasons.add('가격 횡보 (${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange < -0.01 && priceChange > -0.03) {
-      // -1% to -3%
+    } else if (priceChange >= -0.01) {
+      // -1% to -0.3%
+      bearishScore += 1;
+      reasons.add('약한 하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else if (priceChange >= -0.02) {
+      // -2% to -1%
       bearishScore += 2;
       reasons.add('가격 하락 중 (${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange <= -0.03) {
-      // -3% or less
+    } else if (priceChange >= -0.04) {
+      // -4% to -2%
       bearishScore += 3;
       reasons.add('강한 가격 하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else {
+      // -4% or less
+      bearishScore += 4;
+      reasons.add('매우 강한 하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
     }
 
     // Score based on RSI
@@ -212,28 +240,39 @@ class MarketAnalyzer {
     if (bollingerWidth > 0.08) {
       // High volatility - trending market
       reasons.add('높은 변동성 (추세장)');
-    } else if (bollingerWidth < 0.04) {
-      // Low volatility - ranging market
-      reasons.add('낮은 변동성 (횡보장)');
-      // Give slight bias to ranging if low volatility
-      if (priceChange.abs() < 0.01) {
-        bullishScore = 0;
-        bearishScore = 0;
+      // Amplify existing scores slightly in high volatility
+      if (bullishScore > bearishScore) {
+        bullishScore += 1;
+      } else if (bearishScore > bullishScore) {
+        bearishScore += 1;
       }
+    } else if (bollingerWidth < 0.03) {
+      // Very low volatility - likely ranging
+      reasons.add('매우 낮은 변동성 (횡보 가능성)');
+      // Only reduce scores if price change is also minimal
+      if (priceChange.abs() < 0.002) {
+        bullishScore = (bullishScore * 0.5).round();
+        bearishScore = (bearishScore * 0.5).round();
+      }
+    } else if (bollingerWidth < 0.05) {
+      // Low to moderate volatility
+      reasons.add('낮은 변동성');
     }
 
     // Determine final condition
     final totalScore = bullishScore - bearishScore;
-    final confidence = (bullishScore + bearishScore) / 10.0; // Max score is ~10
+    final confidence = (bullishScore + bearishScore) / 12.0; // Max score is ~12 now
 
     MarketCondition condition;
     if (totalScore >= 5 && avgRsi > 65) {
       condition = MarketCondition.extremeBullish;
-    } else if (totalScore >= 3) {
+    } else if (totalScore >= 2) {
+      // More sensitive threshold (was 3)
       condition = MarketCondition.bullish;
     } else if (totalScore <= -5 && avgRsi < 35) {
       condition = MarketCondition.extremeBearish;
-    } else if (totalScore <= -3) {
+    } else if (totalScore <= -2) {
+      // More sensitive threshold (was -3)
       condition = MarketCondition.bearish;
     } else {
       condition = MarketCondition.ranging;

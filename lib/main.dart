@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/services/bybit_api_client.dart';
-import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
+import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/secure_storage_service.dart';
 import 'package:bybit_scalping_bot/repositories/bybit_repository.dart';
 import 'package:bybit_scalping_bot/repositories/credential_repository.dart';
 import 'package:bybit_scalping_bot/providers/auth_provider.dart';
-import 'package:bybit_scalping_bot/providers/balance_provider.dart';
-import 'package:bybit_scalping_bot/providers/trading_provider.dart';
-import 'package:bybit_scalping_bot/screens/login_screen_new.dart';
-import 'package:bybit_scalping_bot/screens/trading_screen_new.dart';
+import 'package:bybit_scalping_bot/providers/bybit_trading_provider.dart';
+import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
+import 'package:bybit_scalping_bot/screens/bybit_trading_screen.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/constants/app_constants.dart';
-import 'package:bybit_scalping_bot/utils/logger.dart';
 
 // Coinone imports
 import 'package:bybit_scalping_bot/services/coinone/coinone_api_client.dart';
@@ -54,8 +52,8 @@ class MyApp extends StatelessWidget {
     );
 
     // Shared WebSocket clients (created once per authentication session)
-    BybitWebSocketClient? sharedWsClient;
     BybitPublicWebSocketClient? sharedPublicWsClient;
+    BybitWebSocketClient? sharedPrivateWsClient;
     CoinoneWebSocketClient? sharedCoinoneWsClient;
 
     return MultiProvider(
@@ -74,139 +72,48 @@ class MyApp extends StatelessWidget {
           ),
         ),
 
-        // Balance Provider (depends on auth state)
-        ChangeNotifierProxyProvider<AuthProvider, BalanceProvider?>(
+        // Bybit Trading Provider (new adaptive strategy system)
+        ChangeNotifierProxyProvider<AuthProvider, BybitTradingProvider?>(
           create: (context) => null,
           update: (context, authProvider, previous) {
             if (authProvider.isAuthenticated &&
-                authProvider.credentials != null) {
-              final apiClient = BybitApiClient(
-                apiKey: authProvider.credentials!.apiKey,
-                apiSecret: authProvider.credentials!.apiSecret,
-              );
-              final repository = BybitRepository(apiClient: apiClient);
-
-              // Reuse or create WebSocket clients
-              sharedWsClient ??= BybitWebSocketClient(
-                apiKey: authProvider.credentials!.apiKey,
-                apiSecret: authProvider.credentials!.apiSecret,
-                isTestnet: false,
-              );
-
-              sharedPublicWsClient ??= BybitPublicWebSocketClient(
-                isTestnet: false,
-              );
-
-              final provider = BalanceProvider(
-                repository: repository,
-                wsClient: sharedWsClient!,
-                publicWsClient: sharedPublicWsClient!,
-              );
-
-              // Connect both WebSocket clients asynchronously (only if not already connected)
-              final futures = <Future>[];
-              if (!sharedWsClient!.isConnected) {
-                futures.add(sharedWsClient!.connect());
-              }
-              if (!sharedPublicWsClient!.isConnected) {
-                futures.add(sharedPublicWsClient!.connect());
-              }
-
-              if (futures.isNotEmpty) {
-                Future.wait(futures).then((_) {
-                  // WebSocket connected, fetch balance again to subscribe to positions
-                  provider.fetchBalance();
-                }).catchError((error) {
-                  // Handle connection error silently - will fallback to API
-                  Logger.error('WebSocket connection failed: $error');
-                });
-              } else {
-                // Already connected, just fetch balance
-                provider.fetchBalance();
-              }
-
-              return provider;
-            } else {
-              // Disconnect and clear WebSocket clients when logged out
-              sharedWsClient?.disconnect();
-              sharedPublicWsClient?.disconnect();
-              sharedWsClient = null;
-              sharedPublicWsClient = null;
-            }
-            return null;
-          },
-        ),
-
-        // Trading Provider (depends on auth state and balance provider)
-        ChangeNotifierProxyProvider2<AuthProvider, BalanceProvider?, TradingProvider?>(
-          create: (context) => null,
-          update: (context, authProvider, balanceProvider, previous) {
-            if (authProvider.isAuthenticated &&
-                authProvider.credentials != null) {
-              // Reuse previous provider if it exists to preserve state (like _isRunning)
-              // Only create a new one if there wasn't one before
+                authProvider.credentials != null &&
+                authProvider.currentExchange == ExchangeType.bybit) {
+              // Reuse previous provider to preserve state
               if (previous != null) {
-                // Update callbacks for the existing provider
-                if (balanceProvider != null) {
-                  balanceProvider.onPositionClosed = (symbol) {
-                    previous.handlePositionClosed(symbol);
-                  };
-                }
-                // Update WebSocket connection status callback
-                if (sharedPublicWsClient != null) {
-                  sharedPublicWsClient!.onConnectionStatusChanged = (isConnected) {
-                    previous.handleWebSocketStatusChange(isConnected);
-                  };
-                }
                 return previous;
               }
 
-              // Create new provider only when there wasn't one before
+              // Create new provider
               final apiClient = BybitApiClient(
                 apiKey: authProvider.credentials!.apiKey,
                 apiSecret: authProvider.credentials!.apiSecret,
               );
               final repository = BybitRepository(apiClient: apiClient);
 
-              // Reuse shared public WebSocket client
+              // Create or reuse public WebSocket client (for kline data)
               sharedPublicWsClient ??= BybitPublicWebSocketClient(
                 isTestnet: false,
               );
 
-              // Create trading provider with connection status callback
-              final tradingProvider = TradingProvider(
-                repository: repository,
-                publicWsClient: sharedPublicWsClient!,
+              // Create or reuse private WebSocket client (for position updates)
+              sharedPrivateWsClient ??= BybitWebSocketClient(
+                apiKey: authProvider.credentials!.apiKey,
+                apiSecret: authProvider.credentials!.apiSecret,
+                isTestnet: false,
               );
 
-              // Set connection status callback
-              sharedPublicWsClient!.onConnectionStatusChanged = (isConnected) {
-                tradingProvider.handleWebSocketStatusChange(isConnected);
-              };
-
-              // Set position closure callback from BalanceProvider to TradingProvider
-              // This enables immediate re-entry when position is closed via WebSocket
-              if (balanceProvider != null) {
-                balanceProvider.onPositionClosed = (symbol) {
-                  tradingProvider.handlePositionClosed(symbol);
-                };
-                Logger.debug('Main: Connected position closure callback from BalanceProvider to TradingProvider');
-              }
-
-              // Connect public WebSocket and initialize (only if not already connected)
-              if (!sharedPublicWsClient!.isConnected) {
-                sharedPublicWsClient!.connect().then((_) {
-                  // WebSocket connected, subscribe to default symbol
-                  tradingProvider.initialize();
-                }).catchError((error) {
-                  Logger.error('Public WebSocket connection failed for TradingProvider: $error');
-                });
-              } else {
-                // Already connected, just initialize
-                tradingProvider.initialize();
-              }
-
-              return tradingProvider;
+              return BybitTradingProvider(
+                repository: repository,
+                publicWsClient: sharedPublicWsClient!,
+                privateWsClient: sharedPrivateWsClient!,
+              );
+            } else {
+              // Disconnect WebSocket when logged out
+              sharedPublicWsClient?.disconnect();
+              sharedPublicWsClient = null;
+              sharedPrivateWsClient?.disconnect();
+              sharedPrivateWsClient = null;
             }
             return null;
           },
@@ -342,14 +249,14 @@ class _SplashScreenState extends State<SplashScreen> {
         // Default to Bybit
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
-            builder: (context) => const TradingScreenNew(),
+            builder: (context) => const BybitTradingScreen(),
           ),
         );
       }
     } else {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (context) => const LoginScreenNew(),
+          builder: (context) => const BybitLoginScreen(),
         ),
       );
     }

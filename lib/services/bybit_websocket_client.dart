@@ -301,7 +301,7 @@ class BybitWebSocketClient {
       // Check if pong was received
       if (_lastPingSentTime != null &&
           (_lastPongReceivedTime == null ||
-           _lastPongReceivedTime!.isBefore(_lastPingSentTime!))) {
+              _lastPongReceivedTime!.isBefore(_lastPingSentTime!))) {
         Logger.warning('WebSocket: Pong timeout - reconnecting...');
         _handlePongTimeout();
       }

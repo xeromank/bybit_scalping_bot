@@ -73,6 +73,9 @@ class TopCoin {
     return '$sign${(priceChangePercent24h * 100).toStringAsFixed(2)}%';
   }
 
+  /// Alias for formatted24hChange (for UI compatibility)
+  String get formattedChange24h => formatted24hChange;
+
   /// Get formatted turnover (in millions)
   String get formattedTurnover {
     if (turnover24h >= 1000000000) {
@@ -85,6 +88,9 @@ class TopCoin {
       return '\$${(turnover24h / 1000).toStringAsFixed(2)}K';
     }
   }
+
+  /// Alias for formattedTurnover (showing volume in UI)
+  String get formattedVolume => formattedTurnover;
 
   @override
   String toString() {

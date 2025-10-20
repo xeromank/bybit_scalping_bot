@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/auth_provider.dart';
 import 'package:bybit_scalping_bot/providers/coinone_balance_provider.dart';
 import 'package:bybit_scalping_bot/providers/coinone_trading_provider.dart';
-import 'package:bybit_scalping_bot/screens/login_screen_new.dart';
+import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
 import 'package:bybit_scalping_bot/screens/coinone_withdrawal_screen.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_balance.dart';
@@ -289,7 +289,7 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
 
     // Navigate to login screen
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const LoginScreenNew()),
+      MaterialPageRoute(builder: (context) => const BybitLoginScreen()),
     );
   }
 

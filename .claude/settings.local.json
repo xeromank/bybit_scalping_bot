@@ -1,11 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter analyze lib/providers/coinone_trading_provider.dart lib/services/coinone/strategies/uptrend_strategy.dart)",
-      "Bash(flutter analyze lib/models/coinone/coinone_balance.dart lib/services/coinone/coinone_api_client.dart)"
+      "WebFetch(domain:bybit-exchange.github.io)",
+      "mcp__bybit__get_bybit_chart",
+      "Bash(dart run backtest_eth.dart)"
     ],
     "deny": [],
     "ask": []
   },
-  "enableAllProjectMcpServers": true
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "bybit"
+  ]
 }

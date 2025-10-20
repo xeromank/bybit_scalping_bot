@@ -1,3 +1,5 @@
+import '../utils/logger.dart';
+
 /// Represents a trading position
 ///
 /// Responsibility: Encapsulate position data

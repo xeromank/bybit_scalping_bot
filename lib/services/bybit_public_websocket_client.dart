@@ -166,14 +166,14 @@ class BybitPublicWebSocketClient {
       // Handle pong response (Public WebSocket format: {"op":"ping", "ret_msg":"pong"})
       if (data['op'] == 'ping' && data['ret_msg'] == 'pong') {
         _lastPongReceivedTime = DateTime.now();
-        Logger.debug('PublicWebSocket: Pong received');
+        // Logger.debug('PublicWebSocket: Pong received');
         return;
       }
 
       // Also handle standard pong format (for compatibility)
       if (data['op'] == 'pong') {
         _lastPongReceivedTime = DateTime.now();
-        Logger.debug('PublicWebSocket: Pong received (standard format)');
+        // Logger.debug('PublicWebSocket: Pong received (standard format)');
         return;
       }
 
@@ -186,6 +186,21 @@ class BybitPublicWebSocketClient {
       // Handle topic data
       if (data.containsKey('topic')) {
         final topic = data['topic'] as String;
+
+        // Kline 데이터는 상세히 로깅
+        if (topic.contains('kline')) {
+          // Logger.debug('📊 [KLINE UPDATE] Topic: $topic');
+          if (data['data'] != null) {
+            final klines = data['data'] as List;
+            for (var kline in klines) {
+              final confirm = kline['confirm'] ?? false;
+              // Logger.debug('🕯️  Kline: ${confirm ? "✅ CONFIRMED" : "⏳ UPDATING"}');
+              // Logger.debug('   - start: ${kline['start']} | end: ${kline['end']}');
+              // Logger.debug('   - open: ${kline['open']} | high: ${kline['high']} | low: ${kline['low']} | close: ${kline['close']}');
+              // Logger.debug('   - volume: ${kline['volume']} | turnover: ${kline['turnover']}');
+            }
+          }
+        }
 
         // Find matching controller (exact match or wildcard)
         for (final entry in _topicControllers.entries) {
@@ -256,7 +271,7 @@ class BybitPublicWebSocketClient {
           'op': 'ping',
         };
         _channel?.sink.add(jsonEncode(pingMessage));
-        Logger.debug('PublicWebSocket: Ping sent');
+        // Logger.debug('PublicWebSocket: Ping sent');
 
         // Start pong timeout check (10 seconds)
         _startPongTimeoutTimer();
