@@ -376,4 +376,26 @@ class BybitApiClient implements ApiClient {
 
     return await get('/v5/market/instruments-info', params: params);
   }
+
+  /// Get tickers for all symbols (PUBLIC API - no authentication required)
+  ///
+  /// Returns latest market data including:
+  /// - Last price
+  /// - 24h volume
+  /// - 24h turnover (거래대금)
+  /// - Price change percentage
+  Future<Map<String, dynamic>> getTickers({
+    required String category, // linear, inverse, spot
+    String? symbol, // Optional: get specific symbol
+  }) async {
+    final params = <String, dynamic>{
+      'category': category,
+    };
+
+    if (symbol != null) {
+      params['symbol'] = symbol;
+    }
+
+    return await get('/v5/market/tickers', params: params);
+  }
 }

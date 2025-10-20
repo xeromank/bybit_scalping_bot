@@ -744,3 +744,101 @@ TechnicalAnalysis analyzePriceData(
     );
   }
 }
+
+// ============================================================================
+// SERIES CALCULATION FUNCTIONS (for market analysis)
+// ============================================================================
+// These functions return a series of values instead of just the latest value
+
+/// Calculates RSI series (returns RSI value for each candle)
+///
+/// [closePrices] - List of prices (oldest first)
+/// [period] - RSI period (typically 14)
+///
+/// Returns list of RSI values (same length as input prices, first few values will be NaN)
+List<double> calculateRSISeries(List<double> closePrices, int period) {
+  if (closePrices.length < period + 1) {
+    return [];
+  }
+
+  final rsiValues = <double>[];
+
+  // Calculate price changes
+  final gains = <double>[];
+  final losses = <double>[];
+
+  for (int i = 1; i < closePrices.length; i++) {
+    final change = closePrices[i] - closePrices[i - 1];
+    gains.add(change > 0 ? change : 0);
+    losses.add(change < 0 ? -change : 0);
+  }
+
+  // Calculate initial average gain and loss
+  double avgGain = gains.take(period).reduce((a, b) => a + b) / period;
+  double avgLoss = losses.take(period).reduce((a, b) => a + b) / period;
+
+  // First RSI value
+  double rsi;
+  if (avgLoss == 0) {
+    rsi = 100;
+  } else {
+    final rs = avgGain / avgLoss;
+    rsi = 100 - (100 / (1 + rs));
+  }
+  rsiValues.add(rsi);
+
+  // Calculate RSI for each subsequent period using Wilder's smoothing
+  for (int i = period; i < gains.length; i++) {
+    avgGain = (avgGain * (period - 1) + gains[i]) / period;
+    avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+
+    if (avgLoss == 0) {
+      rsi = 100;
+    } else {
+      final rs = avgGain / avgLoss;
+      rsi = 100 - (100 / (1 + rs));
+    }
+    rsiValues.add(rsi);
+  }
+
+  return rsiValues;
+}
+
+/// Calculates EMA series (returns EMA value for each candle)
+///
+/// [prices] - List of prices (oldest first)
+/// [period] - EMA period (typically 9, 21, 50)
+///
+/// Returns list of EMA values (length = prices.length - period + 1)
+List<double> calculateEMASeries(List<double> prices, int period) {
+  if (prices.length < period) {
+    return [];
+  }
+
+  final emaValues = <double>[];
+
+  // Calculate initial SMA as starting point
+  double ema = prices.take(period).reduce((a, b) => a + b) / period;
+  emaValues.add(ema);
+
+  // Calculate multiplier
+  final multiplier = 2.0 / (period + 1);
+
+  // Calculate EMA for remaining prices
+  for (int i = period; i < prices.length; i++) {
+    ema = (prices[i] - ema) * multiplier + ema;
+    emaValues.add(ema);
+  }
+
+  return emaValues;
+}
+
+/// Calculates Bollinger Bands with default parameters
+///
+/// Wrapper function for calculateBollingerBands with standard settings
+/// [prices] - List of prices (oldest first)
+///
+/// Returns BollingerBands object
+BollingerBands calculateBollingerBandsDefault(List<double> prices) {
+  return calculateBollingerBands(prices, 20, 2.0);
+}
