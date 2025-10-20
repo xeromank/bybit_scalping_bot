@@ -79,6 +79,7 @@ class TradingProvider extends ChangeNotifier {
   Position? _currentPosition;
   List<TradeLog> _logs = [];
   Timer? _monitoringTimer;
+  Timer? _trendAnalysisTimer; // Timer for periodic trend analysis
   StreamSubscription? _klineSubscription;
   final List<double> _realtimeClosePrices = [];
   final List<double> _realtimeVolumes = []; // Store volumes from WebSocket
@@ -153,6 +154,13 @@ class TradingProvider extends ChangeNotifier {
       if (_disposed) return;
       Logger.log('TradingProvider: Initialized with default symbol: $_symbol');
     }
+
+    // Analyze market trend on initialization
+    await analyzeMarketTrend();
+    if (_disposed) return;
+
+    // Start periodic trend analysis (every 5 minutes)
+    _startTrendAnalysisTimer();
 
     // If bot is running (e.g., after hot reload), immediately check position
     if (_isRunning && !_disposed) {
@@ -307,6 +315,9 @@ class TradingProvider extends ChangeNotifier {
 
         // Subscribe to new symbol for WebSocket updates
         await _subscribeToKline();
+
+        // Analyze trend for new symbol
+        await analyzeMarketTrend();
       }
 
       notifyListeners();
@@ -1959,6 +1970,22 @@ class TradingProvider extends ChangeNotifier {
     ));
   }
 
+  /// Starts periodic trend analysis timer (every 5 minutes)
+  void _startTrendAnalysisTimer() {
+    _trendAnalysisTimer?.cancel();
+    _trendAnalysisTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (timer) async {
+        if (!_disposed) {
+          await analyzeMarketTrend();
+        } else {
+          timer.cancel();
+        }
+      },
+    );
+    Logger.log('TradingProvider: Started periodic trend analysis (every 5 minutes)');
+  }
+
   /// Analyze market trend based on recent candles
   /// Called when bot starts or manually triggered
   Future<void> analyzeMarketTrend() async {
@@ -2163,6 +2190,7 @@ class TradingProvider extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _monitoringTimer?.cancel();
+    _trendAnalysisTimer?.cancel();
     _klineSubscription?.cancel();
     _isKlineSubscribed = false;
     _subscribedSymbol = null;

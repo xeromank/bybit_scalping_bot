@@ -202,6 +202,99 @@ class _TradingControlsState extends State<TradingControls> {
               ),
               const SizedBox(height: ThemeConstants.spacingSmall),
 
+              // ===== FIXED SECTION: Market Trend Analysis =====
+              if (provider.currentTrend != MarketTrend.unknown)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: ThemeConstants.spacingSmall,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        _getTrendColor(provider.currentTrend).withValues(alpha: 0.15),
+                        _getTrendColor(provider.currentTrend).withValues(alpha: 0.05),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(ThemeConstants.borderRadiusSmall),
+                    border: Border.all(
+                      color: _getTrendColor(provider.currentTrend).withValues(alpha: 0.4),
+                      width: 2,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _getTrendIcon(provider.currentTrend),
+                            color: _getTrendColor(provider.currentTrend),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '시장 추세',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: _getTrendColor(provider.currentTrend).withValues(alpha: 0.7),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                provider.trendDescription,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getTrendColor(provider.currentTrend),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          if (provider.trendAnalyzedAt != null)
+                            Text(
+                              _formatTrendTime(provider.trendAnalyzedAt!),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: _getTrendColor(provider.currentTrend).withValues(alpha: 0.6),
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                          // Refresh button
+                          InkWell(
+                            onTap: () => _refreshTrend(provider),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: _getTrendColor(provider.currentTrend).withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.refresh,
+                                size: 16,
+                                color: _getTrendColor(provider.currentTrend),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              if (provider.currentTrend != MarketTrend.unknown)
+                const SizedBox(height: ThemeConstants.spacingSmall),
+
               // ===== FIXED SECTION: Technical Indicators =====
               Container(
                 padding: const EdgeInsets.all(ThemeConstants.spacingSmall),
@@ -987,6 +1080,47 @@ class _TradingControlsState extends State<TradingControls> {
         '${time.second.toString().padLeft(2, '0')}';
   }
 
+  Color _getTrendColor(MarketTrend trend) {
+    switch (trend) {
+      case MarketTrend.uptrend:
+        return Colors.green.shade700;
+      case MarketTrend.downtrend:
+        return Colors.red.shade700;
+      case MarketTrend.sideways:
+        return Colors.orange.shade700;
+      case MarketTrend.unknown:
+        return ThemeConstants.textSecondaryColor;
+    }
+  }
+
+  IconData _getTrendIcon(MarketTrend trend) {
+    switch (trend) {
+      case MarketTrend.uptrend:
+        return Icons.trending_up;
+      case MarketTrend.downtrend:
+        return Icons.trending_down;
+      case MarketTrend.sideways:
+        return Icons.trending_flat;
+      case MarketTrend.unknown:
+        return Icons.help_outline;
+    }
+  }
+
+  String _formatTrendTime(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time);
+
+    if (diff.inMinutes < 1) {
+      return '방금 전';
+    } else if (diff.inMinutes < 60) {
+      return '${diff.inMinutes}분 전';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}시간 전';
+    } else {
+      return '${diff.inDays}일 전';
+    }
+  }
+
   Future<void> _startBot(TradingProvider provider) async {
     final result = await provider.startBot();
 
@@ -1189,6 +1323,30 @@ class _TradingControlsState extends State<TradingControls> {
           ),
         );
       },
+    );
+  }
+
+  Future<void> _refreshTrend(TradingProvider provider) async {
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('시장 추세 분석 중...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    // Refresh trend analysis
+    await provider.analyzeMarketTrend();
+
+    if (!mounted) return;
+
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('추세 업데이트 완료: ${provider.trendDescription}'),
+        backgroundColor: ThemeConstants.successColor,
+        duration: const Duration(seconds: 2),
+      ),
     );
   }
 }
