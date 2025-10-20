@@ -120,6 +120,12 @@ class TradingProvider extends ChangeNotifier {
 
       if (isConnected) {
         _addLog(TradeLog.info('WebSocket connected'));
+        // Subscribe to kline when connection is established
+        _subscribeToKline().then((_) {
+          Logger.debug('TradingProvider: Auto-subscribed to kline after WebSocket connection');
+        }).catchError((error) {
+          Logger.error('TradingProvider: Failed to auto-subscribe after connection: $error');
+        });
       } else {
         _addLog(TradeLog.warning('WebSocket disconnected'));
       }
@@ -132,7 +138,7 @@ class TradingProvider extends ChangeNotifier {
   /// allowing instant re-entry detection instead of waiting for polling timer
   void handlePositionClosed(String symbol) {
     if (symbol == _symbol && _currentPosition != null) {
-      Logger.log('TradingProvider: Position closed via WebSocket for $symbol - enabling immediate re-entry');
+      Logger.debug('TradingProvider: Position closed via WebSocket for $symbol - enabling immediate re-entry');
       _currentPosition = null;
       _addLog(TradeLog.info('Position closed (TP/SL hit) - ready for re-entry'));
       notifyListeners();
@@ -152,7 +158,7 @@ class TradingProvider extends ChangeNotifier {
     if (_publicWsClient != null && _publicWsClient!.isConnected) {
       await _subscribeToKline();
       if (_disposed) return;
-      Logger.log('TradingProvider: Initialized with default symbol: $_symbol');
+      Logger.debug('TradingProvider: Initialized with default symbol: $_symbol');
     }
 
     // Analyze market trend on initialization
@@ -164,7 +170,7 @@ class TradingProvider extends ChangeNotifier {
 
     // If bot is running (e.g., after hot reload), immediately check position
     if (_isRunning && !_disposed) {
-      Logger.log('TradingProvider: Bot is running after reload, checking position...');
+      Logger.debug('TradingProvider: Bot is running after reload, checking position...');
       await _updatePositionStatus();
     }
 
@@ -174,7 +180,7 @@ class TradingProvider extends ChangeNotifier {
   /// Loads initial kline data from API to populate indicators immediately
   Future<void> _loadInitialKlineData() async {
     try {
-      Logger.log('TradingProvider: Loading initial kline data for $_symbol...');
+      Logger.debug('TradingProvider: Loading initial kline data for $_symbol...');
 
       // Fetch 50 candles of 5-minute kline data
       final result = await _repository.apiClient.getKlines(
@@ -186,9 +192,9 @@ class TradingProvider extends ChangeNotifier {
       if (result['retCode'] == 0) {
         final list = result['result']['list'] as List<dynamic>;
 
-        Logger.log('TradingProvider: API response - ${list.length} candles received');
+        Logger.debug('TradingProvider: API response - ${list.length} candles received');
         if (list.isNotEmpty) {
-          Logger.log('TradingProvider: First candle sample: ${list[0]}');
+          Logger.debug('TradingProvider: First candle sample: ${list[0]}');
         }
 
         // Clear existing data
@@ -208,14 +214,14 @@ class TradingProvider extends ChangeNotifier {
           }
         }
 
-        Logger.log('TradingProvider: Parsed ${_realtimeClosePrices.length} valid candles');
+        Logger.debug('TradingProvider: Parsed ${_realtimeClosePrices.length} valid candles');
 
         // Update current price from the latest candle
         if (_realtimeClosePrices.isNotEmpty) {
           _currentPrice = _realtimeClosePrices.last;
         }
 
-        Logger.log('TradingProvider: Loaded ${_realtimeClosePrices.length} candles from API');
+        Logger.debug('TradingProvider: Loaded ${_realtimeClosePrices.length} candles from API');
 
         // Calculate indicators immediately if we have enough data
         if (_realtimeClosePrices.length >= 30) {
@@ -305,7 +311,7 @@ class TradingProvider extends ChangeNotifier {
 
         try {
           await _publicWsClient!.unsubscribe('kline.${AppConstants.defaultMainInterval}.$oldSymbol');
-          Logger.log('TradingProvider: Unsubscribed from kline.${AppConstants.defaultMainInterval}.$oldSymbol');
+          Logger.debug('TradingProvider: Unsubscribed from kline.${AppConstants.defaultMainInterval}.$oldSymbol');
         } catch (e) {
           Logger.error('TradingProvider: Error unsubscribing from old symbol: $e');
         }
@@ -649,7 +655,7 @@ class TradingProvider extends ChangeNotifier {
 
     // Check if already subscribed to the same symbol
     if (_isKlineSubscribed && _subscribedSymbol == _symbol) {
-      Logger.log('TradingProvider: Already subscribed to kline for $_symbol');
+      Logger.debug('TradingProvider: Already subscribed to kline for $_symbol');
       return;
     }
 
@@ -659,7 +665,7 @@ class TradingProvider extends ChangeNotifier {
         final oldTopic = 'kline.${AppConstants.defaultMainInterval}.$_subscribedSymbol';
         await _publicWsClient!.unsubscribe(oldTopic);
         _klineSubscription?.cancel();
-        Logger.log('TradingProvider: Unsubscribed from $oldTopic');
+        Logger.debug('TradingProvider: Unsubscribed from $oldTopic');
       }
 
       // Subscribe to 5-minute kline for the current symbol
@@ -708,9 +714,12 @@ class TradingProvider extends ChangeNotifier {
       _currentCandleProgress = CandleProgress.fromKline(kline);
 
       // Update current price for UI display (even for unconfirmed candles)
+      bool priceUpdated = false;
       if (closePrice > 0) {
         _currentPrice = closePrice;
         _lastDataUpdate = DateTime.now();
+        priceUpdated = true;
+        Logger.debug('TradingProvider: 💰 Price updated: \$${closePrice.toStringAsFixed(2)} (${confirm ? "CONFIRMED" : "UNCONFIRMED"})');
       }
 
       if (closePrice > 0 && volume > 0) {
@@ -731,7 +740,7 @@ class TradingProvider extends ChangeNotifier {
           if (_realtimeClosePrices.isNotEmpty) {
             _realtimeClosePrices[_realtimeClosePrices.length - 1] = closePrice;
             _realtimeVolumes[_realtimeVolumes.length - 1] = volume;
-            Logger.log('TradingProvider: 🔄 UPDATING last candle - close: $closePrice, volume: ${volume.toStringAsFixed(2)}');
+            Logger.debug('TradingProvider: 🔄 UPDATING last candle - close: $closePrice, volume: ${volume.toStringAsFixed(2)}');
           }
         }
 
@@ -740,7 +749,16 @@ class TradingProvider extends ChangeNotifier {
           _calculateRealtimeIndicators();
         } else {
           Logger.warning('TradingProvider: Not enough data yet (${_realtimeClosePrices.length}/30 candles) - skipping indicator calculation');
+          // Even if we don't have enough data for indicators, still notify listeners for price update
+          if (priceUpdated) {
+            Logger.debug('TradingProvider: 🔔 Notifying UI listeners (price update, no indicators)');
+            notifyListeners();
+          }
         }
+      } else if (priceUpdated) {
+        // Price was updated but no volume data - still notify listeners
+        Logger.debug('TradingProvider: 🔔 Notifying UI listeners (price update, no volume)');
+        notifyListeners();
       }
     } catch (e) {
       Logger.error('TradingProvider: Error handling kline update: $e');
@@ -794,7 +812,7 @@ class TradingProvider extends ChangeNotifier {
           );
         }
 
-        Logger.log('TradingProvider: 📊 Signal: ${isLong ? "LONG" : "SHORT"} | ${_currentSignalStrength?.toString() ?? "N/A"}');
+        Logger.debug('TradingProvider: 📊 Signal: ${isLong ? "LONG" : "SHORT"} | ${_currentSignalStrength?.toString() ?? "N/A"}');
       } else {
         _currentSignalStrength = null;
       }
@@ -1892,7 +1910,7 @@ class TradingProvider extends ChangeNotifier {
         );
       }).toList();
 
-      Logger.log('TradingProvider: Loaded ${_logs.length} logs from database');
+      Logger.debug('TradingProvider: Loaded ${_logs.length} logs from database');
       notifyListeners();
     } catch (e) {
       Logger.error('TradingProvider: Error loading logs from database: $e');
@@ -1983,7 +2001,7 @@ class TradingProvider extends ChangeNotifier {
         }
       },
     );
-    Logger.log('TradingProvider: Started periodic trend analysis (every 5 minutes)');
+    Logger.debug('TradingProvider: Started periodic trend analysis (every 5 minutes)');
   }
 
   /// Analyze market trend based on recent candles

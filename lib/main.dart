@@ -190,7 +190,7 @@ class MyApp extends StatelessWidget {
                 balanceProvider.onPositionClosed = (symbol) {
                   tradingProvider.handlePositionClosed(symbol);
                 };
-                Logger.log('Main: Connected position closure callback from BalanceProvider to TradingProvider');
+                Logger.debug('Main: Connected position closure callback from BalanceProvider to TradingProvider');
               }
 
               // Connect public WebSocket and initialize (only if not already connected)

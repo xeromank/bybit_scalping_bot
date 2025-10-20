@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 /// Responsibility: Provide formatted logging with timestamp
 ///
 /// Usage:
-///   Logger.log('Message');
+///   Logger.debug('Message');
 ///   Logger.info('Info message');
 ///   Logger.error('Error message');
 ///   Logger.warning('Warning message');
