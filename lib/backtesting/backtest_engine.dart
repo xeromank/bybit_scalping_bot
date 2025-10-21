@@ -25,7 +25,10 @@ class KlineData {
   factory KlineData.fromBybitKline(List<dynamic> kline) {
     // Bybit kline format: [startTime, open, high, low, close, volume, turnover]
     return KlineData(
-      timestamp: DateTime.fromMillisecondsSinceEpoch(int.parse(kline[0].toString())),
+      timestamp: DateTime.fromMillisecondsSinceEpoch(
+        int.parse(kline[0].toString()),
+        isUtc: true,
+      ),
       open: double.parse(kline[1].toString()),
       high: double.parse(kline[2].toString()),
       low: double.parse(kline[3].toString()),
