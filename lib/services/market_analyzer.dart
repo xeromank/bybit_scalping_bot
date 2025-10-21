@@ -1,6 +1,5 @@
 import 'package:bybit_scalping_bot/models/market_condition.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
-import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Market condition analysis result
 class MarketAnalysisResult {
@@ -13,6 +12,10 @@ class MarketAnalysisResult {
   final double confidence; // 0.0 to 1.0
   final String reasoning;
 
+  // New composite analysis fields
+  final CompositeAnalysis? compositeAnalysis;
+  final double? compositeScore;
+
   MarketAnalysisResult({
     required this.condition,
     required this.priceChange,
@@ -22,6 +25,8 @@ class MarketAnalysisResult {
     required this.emaDirection,
     required this.confidence,
     required this.reasoning,
+    this.compositeAnalysis,
+    this.compositeScore,
   });
 }
 
@@ -38,53 +43,121 @@ class MarketAnalyzer {
   /// Parameters:
   /// - closePrices: Recent close prices (at least 50 candles recommended)
   /// - volumes: Recent volumes (same length as closePrices)
+  /// - useCompositeAnalysis: Use new multi-indicator composite analysis (default: true)
   ///
   /// Returns: MarketAnalysisResult with condition and analysis details
   static MarketAnalysisResult analyzeMarket({
     required List<double> closePrices,
     required List<double> volumes,
+    bool useCompositeAnalysis = true,
   }) {
     if (closePrices.length < 30) {
       throw ArgumentError('Need at least 30 candles for market analysis');
     }
 
-    Logger.debug('MarketAnalyzer: Analyzing market with ${closePrices.length} candles');
+    // Use new composite analyzer if enabled and sufficient data
+    if (useCompositeAnalysis && closePrices.length >= 50 && volumes.length >= 50) {
+      return _analyzeMarketComposite(closePrices, volumes);
+    }
 
+    // Fallback to legacy analyzer
+    return _analyzeMarketLegacy(closePrices, volumes);
+  }
+
+  /// New composite multi-indicator analysis
+  static MarketAnalysisResult _analyzeMarketComposite(
+    List<double> closePrices,
+    List<double> volumes,
+  ) {
+    // Calculate composite analysis
+    final composite = analyzeMarketComposite(closePrices, volumes);
+
+    // Map EnhancedMarketCondition to MarketCondition
+    final condition = _mapEnhancedToLegacyCondition(composite.marketCondition);
+
+    // Extract EMA direction
+    String emaDirection;
+    bool isEmaAligned;
+    if (composite.maTrend.isPerfectUptrend) {
+      emaDirection = 'bullish';
+      isEmaAligned = true;
+    } else if (composite.maTrend.isPerfectDowntrend) {
+      emaDirection = 'bearish';
+      isEmaAligned = true;
+    } else if (composite.maTrend.isPartialUptrend) {
+      emaDirection = 'bullish';
+      isEmaAligned = false;
+    } else if (composite.maTrend.isPartialDowntrend) {
+      emaDirection = 'bearish';
+      isEmaAligned = false;
+    } else {
+      emaDirection = 'neutral';
+      isEmaAligned = false;
+    }
+
+    // Calculate Bollinger width
+    final bollingerWidth = (composite.bb.upper - composite.bb.lower) / composite.bb.middle;
+
+    // Build reasoning
+    final reasons = <String>[];
+    reasons.add('Composite Score: ${composite.compositeScore.toStringAsFixed(2)}');
+    reasons.add('RSI: ${composite.rsi.toStringAsFixed(1)}');
+    reasons.add('Volume: ${composite.volume.relativeVolumeRatio.toStringAsFixed(2)}x');
+    reasons.add('Price Action: ${(composite.priceAction.priceChangePercent * 100).toStringAsFixed(2)}%');
+    reasons.add('MACD: ${composite.macd.isBullish ? "Bullish" : "Bearish"} ${composite.macdTrend.name}');
+
+    // Map SignalConfidence to double
+    double confidence;
+    switch (composite.confidence) {
+      case SignalConfidence.high:
+        confidence = 0.85;
+        break;
+      case SignalConfidence.medium:
+        confidence = 0.65;
+        break;
+      case SignalConfidence.low:
+        confidence = 0.45;
+        break;
+    }
+
+    return MarketAnalysisResult(
+      condition: condition,
+      priceChange: composite.priceAction.priceChangePercent,
+      avgRsi: composite.rsi,
+      bollingerWidth: bollingerWidth,
+      isEmaAligned: isEmaAligned,
+      emaDirection: emaDirection,
+      confidence: confidence,
+      reasoning: reasons.join(' • '),
+      compositeAnalysis: composite,
+      compositeScore: composite.compositeScore,
+    );
+  }
+
+  /// Legacy market analysis (backward compatible)
+  static MarketAnalysisResult _analyzeMarketLegacy(
+    List<double> closePrices,
+    List<double> volumes,
+  ) {
     // 1. Calculate price change (recent 20 candles)
     final recentPrices = closePrices.length > 20
         ? closePrices.sublist(closePrices.length - 20)
         : closePrices;
     final priceChange = _calculatePriceChange(recentPrices);
-    Logger.debug('MarketAnalyzer: Price change = ${(priceChange * 100).toStringAsFixed(2)}%');
 
     // 2. Calculate average RSI (recent 10 candles)
-    Logger.debug('MarketAnalyzer: 📊 RSI 계산 시작');
-    Logger.debug('MarketAnalyzer: - 총 캔들 개수: ${closePrices.length}개');
-    Logger.debug('MarketAnalyzer: - 최근 5개 가격: ${closePrices.length >= 5 ? closePrices.sublist(closePrices.length - 5).map((p) => p.toStringAsFixed(2)).join(", ") : closePrices.map((p) => p.toStringAsFixed(2)).join(", ")}');
-
     final rsiValues = calculateRSISeries(closePrices, 14);
-    Logger.debug('MarketAnalyzer: - RSI(14) 계산 완료: ${rsiValues.length}개 값');
-    if (rsiValues.length >= 10) {
-      final recentRSI = rsiValues.sublist(rsiValues.length - 10);
-      Logger.debug('MarketAnalyzer: - 최근 10개 RSI: ${recentRSI.map((r) => r.toStringAsFixed(2)).join(", ")}');
-    } else if (rsiValues.isNotEmpty) {
-      Logger.debug('MarketAnalyzer: - 전체 RSI: ${rsiValues.map((r) => r.toStringAsFixed(2)).join(", ")}');
-    }
-
     final avgRsi = _calculateAverageRSI(rsiValues, lookback: 10);
-    Logger.debug('MarketAnalyzer: ✅ 평균 RSI(최근 10개) = ${avgRsi.toStringAsFixed(2)}');
 
     // 3. Calculate Bollinger Band width (volatility indicator)
     final bb = calculateBollingerBandsDefault(closePrices);
     final bollingerWidth = _calculateBollingerWidth(bb);
-    Logger.debug('MarketAnalyzer: Bollinger width = ${(bollingerWidth * 100).toStringAsFixed(2)}%');
 
     // 4. Check EMA alignment
     final ema9 = calculateEMASeries(closePrices, 9);
     final ema21 = calculateEMASeries(closePrices, 21);
     final ema50 = calculateEMASeries(closePrices, 50);
     final emaAlignment = _analyzeEMAAlignment(ema9, ema21, ema50);
-    Logger.debug('MarketAnalyzer: EMA alignment = ${emaAlignment['direction']} (aligned: ${emaAlignment['aligned']})');
 
     // 5. Determine market condition based on all factors
     final result = _determineMarketCondition(
@@ -95,9 +168,27 @@ class MarketAnalyzer {
       isEmaAligned: emaAlignment['aligned'] as bool,
     );
 
-    Logger.success('MarketAnalyzer: Market condition = ${result.condition.displayName} (confidence: ${(result.confidence * 100).toStringAsFixed(0)}%)');
-
     return result;
+  }
+
+  /// Map EnhancedMarketCondition to legacy MarketCondition
+  static MarketCondition _mapEnhancedToLegacyCondition(EnhancedMarketCondition enhanced) {
+    switch (enhanced) {
+      case EnhancedMarketCondition.extremeBullish:
+        return MarketCondition.extremeBullish;
+      case EnhancedMarketCondition.strongBullish:
+        return MarketCondition.strongBullish;
+      case EnhancedMarketCondition.weakBullish:
+        return MarketCondition.weakBullish;
+      case EnhancedMarketCondition.ranging:
+        return MarketCondition.ranging;
+      case EnhancedMarketCondition.weakBearish:
+        return MarketCondition.weakBearish;
+      case EnhancedMarketCondition.strongBearish:
+        return MarketCondition.strongBearish;
+      case EnhancedMarketCondition.extremeBearish:
+        return MarketCondition.extremeBearish;
+    }
   }
 
   /// Calculate price change percentage
@@ -168,42 +259,34 @@ class MarketAnalyzer {
     int bearishScore = 0;
     final List<String> reasons = [];
 
-    // Score based on price change (20 candles) - More granular scoring
-    if (priceChange > 0.04) {
-      // +4% or more
+    // Score based on price change (20 candles = 100분) - 현실적으로 조정
+    if (priceChange > 0.02) {
+      // +2.0% or more (100분에 2% = 극강세)
       bullishScore += 4;
-      reasons.add('매우 강한 상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange > 0.02) {
-      // +2% to +4%
-      bullishScore += 3;
-      reasons.add('강한 가격 상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
+      reasons.add('극강세 (+${(priceChange * 100).toStringAsFixed(1)}%)');
     } else if (priceChange > 0.01) {
-      // +1% to +2%
+      // +1.0% to +2.0%
+      bullishScore += 3;
+      reasons.add('강세 (+${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else if (priceChange > 0.005) {
+      // +0.5% to +1.0%
       bullishScore += 2;
-      reasons.add('가격 상승 중 (+${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange > 0.003) {
-      // +0.3% to +1%
-      bullishScore += 1;
-      reasons.add('약한 상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange >= -0.003 && priceChange <= 0.003) {
-      // -0.3% to +0.3%
-      reasons.add('가격 횡보 (${(priceChange * 100).toStringAsFixed(1)}%)');
+      reasons.add('상승 (+${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else if (priceChange >= -0.005 && priceChange <= 0.005) {
+      // -0.5% to +0.5% (횡보)
+      reasons.add('횡보 (${(priceChange * 100).toStringAsFixed(1)}%)');
     } else if (priceChange >= -0.01) {
-      // -1% to -0.3%
-      bearishScore += 1;
-      reasons.add('약한 하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange >= -0.02) {
-      // -2% to -1%
+      // -0.5% to -1.0%
       bearishScore += 2;
-      reasons.add('가격 하락 중 (${(priceChange * 100).toStringAsFixed(1)}%)');
-    } else if (priceChange >= -0.04) {
-      // -4% to -2%
+      reasons.add('하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
+    } else if (priceChange >= -0.02) {
+      // -1.0% to -2.0%
       bearishScore += 3;
-      reasons.add('강한 가격 하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
+      reasons.add('약세 (${(priceChange * 100).toStringAsFixed(1)}%)');
     } else {
-      // -4% or less
+      // -2.0% or less (100분에 -2% = 극약세)
       bearishScore += 4;
-      reasons.add('매우 강한 하락 (${(priceChange * 100).toStringAsFixed(1)}%)');
+      reasons.add('극약세 (${(priceChange * 100).toStringAsFixed(1)}%)');
     }
 
     // Score based on RSI
@@ -259,22 +342,38 @@ class MarketAnalyzer {
       reasons.add('낮은 변동성');
     }
 
-    // Determine final condition
+    // Determine final condition (7 levels) - 덜 민감하게 조정
     final totalScore = bullishScore - bearishScore;
     final confidence = (bullishScore + bearishScore) / 12.0; // Max score is ~12 now
 
     MarketCondition condition;
-    if (totalScore >= 5 && avgRsi > 65) {
+
+    // 극강세: RSI 70+ && 강한 상승 (유지)
+    if (totalScore >= 5 && avgRsi > 70) {
       condition = MarketCondition.extremeBullish;
-    } else if (totalScore >= 2) {
-      // More sensitive threshold (was 3)
-      condition = MarketCondition.bullish;
-    } else if (totalScore <= -5 && avgRsi < 35) {
+    }
+    // 강세: RSI 65-70 && 명확한 상승 (강화: 60 → 65, score 3 → 4)
+    else if (totalScore >= 4 && avgRsi > 65) {
+      condition = MarketCondition.strongBullish;
+    }
+    // 약한 강세: RSI 55-65 && 약한 상승 (강화: 50 → 55, score 1 → 2)
+    else if (totalScore >= 2 && avgRsi > 55) {
+      condition = MarketCondition.weakBullish;
+    }
+    // 극약세: RSI 30- && 강한 하락 (유지)
+    else if (totalScore <= -5 && avgRsi < 30) {
       condition = MarketCondition.extremeBearish;
-    } else if (totalScore <= -2) {
-      // More sensitive threshold (was -3)
-      condition = MarketCondition.bearish;
-    } else {
+    }
+    // 약세: RSI 30-35 && 명확한 하락 (강화: 40 → 35, score -3 → -4)
+    else if (totalScore <= -4 && avgRsi < 35) {
+      condition = MarketCondition.strongBearish;
+    }
+    // 약한 약세: RSI 45-55 && 약한 하락 (강화: 50 → 45, score -1 → -2)
+    else if (totalScore <= -2 && avgRsi < 45) {
+      condition = MarketCondition.weakBearish;
+    }
+    // 횡보: 나머지 모두 (RSI 45-65 구간으로 확대)
+    else {
       condition = MarketCondition.ranging;
     }
 

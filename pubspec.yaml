@@ -73,6 +73,9 @@ dependencies:
   # Date formatting for logger
   intl: ^0.18.0
 
+  # Excel file generation for backtest results
+  excel: ^4.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

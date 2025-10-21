@@ -1,33 +1,38 @@
 /// Market condition classification
 ///
-/// 5-level market condition based on price movement, RSI, and volatility
+/// 7-level market condition based on price movement, RSI, and volatility
 enum MarketCondition {
   /// Extreme bullish market (Band Walking uptrend)
-  /// - Price change: +3% or more
   /// - RSI: 70+ sustained
   /// - Strategy: Long trend following only
   extremeBullish,
 
-  /// Bullish market (Uptrend)
-  /// - Price change: +1% to +3%
-  /// - RSI: 55-70
-  /// - Strategy: Long bias (70% long, 30% short)
-  bullish,
+  /// Strong bullish market (Clear uptrend)
+  /// - RSI: 60-70
+  /// - Strategy: Long trend following (but watch for overheating)
+  strongBullish,
+
+  /// Weak bullish market (Mild uptrend)
+  /// - RSI: 50-60
+  /// - Strategy: Mean reversion (short on BB upper, long on BB lower)
+  weakBullish,
 
   /// Ranging market (Sideways/Consolidation)
-  /// - Price change: -0.5% to +0.5%
   /// - RSI: 40-60
   /// - Strategy: Mean reversion (Bollinger Band)
   ranging,
 
-  /// Bearish market (Downtrend)
-  /// - Price change: -1% to -3%
-  /// - RSI: 30-45
-  /// - Strategy: Short bias (70% short, 30% long)
-  bearish,
+  /// Weak bearish market (Mild downtrend)
+  /// - RSI: 40-50
+  /// - Strategy: Mean reversion (long on BB lower, short on BB upper)
+  weakBearish,
+
+  /// Strong bearish market (Clear downtrend)
+  /// - RSI: 30-40
+  /// - Strategy: Short trend following (but watch for overselling)
+  strongBearish,
 
   /// Extreme bearish market (Band Walking downtrend)
-  /// - Price change: -3% or less
   /// - RSI: Below 30 sustained
   /// - Strategy: Short trend following only
   extremeBearish,
@@ -38,15 +43,19 @@ extension MarketConditionExtension on MarketCondition {
   String get displayName {
     switch (this) {
       case MarketCondition.extremeBullish:
-        return '극단적 상승장';
-      case MarketCondition.bullish:
-        return '상승장';
+        return '극강세';
+      case MarketCondition.strongBullish:
+        return '강세';
+      case MarketCondition.weakBullish:
+        return '약한 강세';
       case MarketCondition.ranging:
         return '횡보장';
-      case MarketCondition.bearish:
-        return '하락장';
+      case MarketCondition.weakBearish:
+        return '약한 약세';
+      case MarketCondition.strongBearish:
+        return '약세';
       case MarketCondition.extremeBearish:
-        return '극단적 하락장';
+        return '극약세';
     }
   }
 
@@ -55,11 +64,15 @@ extension MarketConditionExtension on MarketCondition {
     switch (this) {
       case MarketCondition.extremeBullish:
         return '🔥';
-      case MarketCondition.bullish:
+      case MarketCondition.strongBullish:
         return '📈';
+      case MarketCondition.weakBullish:
+        return '↗️';
       case MarketCondition.ranging:
         return '↔️';
-      case MarketCondition.bearish:
+      case MarketCondition.weakBearish:
+        return '↘️';
+      case MarketCondition.strongBearish:
         return '📉';
       case MarketCondition.extremeBearish:
         return '💥';
@@ -70,15 +83,19 @@ extension MarketConditionExtension on MarketCondition {
   String get strategyDescription {
     switch (this) {
       case MarketCondition.extremeBullish:
-        return 'Band Walking 추세 추종 (롱 전용)';
-      case MarketCondition.bullish:
-        return '풀백 롱 진입 (롱 편향)';
+        return '추세 추종 (롱 전용)';
+      case MarketCondition.strongBullish:
+        return '추세 추종 (롱 위주)';
+      case MarketCondition.weakBullish:
+        return '평균회귀 (양방향)';
       case MarketCondition.ranging:
-        return '볼린저 밴드 역추세';
-      case MarketCondition.bearish:
-        return '풀백 숏 진입 (숏 편향)';
+        return '평균회귀 (양방향)';
+      case MarketCondition.weakBearish:
+        return '평균회귀 (양방향)';
+      case MarketCondition.strongBearish:
+        return '추세 추종 (숏 위주)';
       case MarketCondition.extremeBearish:
-        return 'Band Walking 추세 추종 (숏 전용)';
+        return '추세 추종 (숏 전용)';
     }
   }
 
@@ -88,9 +105,11 @@ extension MarketConditionExtension on MarketCondition {
       case MarketCondition.extremeBullish:
       case MarketCondition.extremeBearish:
         return 4; // High risk due to extreme volatility
-      case MarketCondition.bullish:
-      case MarketCondition.bearish:
+      case MarketCondition.strongBullish:
+      case MarketCondition.strongBearish:
         return 3; // Medium-high risk
+      case MarketCondition.weakBullish:
+      case MarketCondition.weakBearish:
       case MarketCondition.ranging:
         return 2; // Low-medium risk
     }
@@ -106,11 +125,15 @@ extension MarketConditionExtension on MarketCondition {
     switch (this) {
       case MarketCondition.extremeBullish:
         return 'red'; // Hot
-      case MarketCondition.bullish:
+      case MarketCondition.strongBullish:
         return 'green';
+      case MarketCondition.weakBullish:
+        return 'lightGreen';
       case MarketCondition.ranging:
         return 'orange';
-      case MarketCondition.bearish:
+      case MarketCondition.weakBearish:
+        return 'lightRed';
+      case MarketCondition.strongBearish:
         return 'red';
       case MarketCondition.extremeBearish:
         return 'purple'; // Very bearish

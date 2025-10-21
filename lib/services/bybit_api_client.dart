@@ -350,13 +350,25 @@ class BybitApiClient implements ApiClient {
     required String symbol,
     required String interval, // 1, 3, 5, 15, 30, 60, 120, 240, 360, 720, D, W, M
     int limit = 200, // 최대 1000
+    int? start, // Start timestamp in milliseconds
+    int? end, // End timestamp in milliseconds
   }) async {
-    return await get('/v5/market/kline', params: {
+    final params = <String, String>{
       'category': 'linear',
       'symbol': symbol,
       'interval': interval,
       'limit': limit.toString(),
-    });
+    };
+
+    if (start != null) {
+      params['start'] = start.toString();
+    }
+
+    if (end != null) {
+      params['end'] = end.toString();
+    }
+
+    return await get('/v5/market/kline', params: params);
   }
 
   // 거래 상품 정보 조회

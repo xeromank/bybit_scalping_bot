@@ -1,0 +1,3 @@
+Entry Time,Exit Time,Side,Strategy,Avg Entry,Exit Price,Qty,P/L USD,P/L %,Entries,Hold (min),Exit Reason,Emergency
+2025-10-14T21:20:00.000,2025-10-14T22:45:00.000,LONG,역추세,3935.57,3961.37,2.5409,60.02,0.66,2,85,BB Middle 도달 (평균회귀 완료),NO
+2025-10-14T22:45:00.000,2025-10-15T00:10:00.000,SHORT,역추세,3971.76,3962.16,2.5329,18.79,0.24,2,85,BB Middle 도달 (평균회귀 완료),NO

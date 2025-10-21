@@ -17,11 +17,24 @@ enum TradingMode {
 }
 
 /// Market trend classification (based on analysis of recent candles)
+/// DEPRECATED: Use EnhancedMarketCondition instead for more granular classification
 enum MarketTrend {
   uptrend,    // Bullish trend: price increased > threshold
   downtrend,  // Bearish trend: price decreased > threshold
   sideways,   // Ranging market: price change within ±threshold
   unknown,    // Not yet analyzed
+}
+
+/// Enhanced 7-level market condition classification
+/// Based on composite multi-indicator analysis
+enum EnhancedMarketCondition {
+  extremeBullish,  // Extreme bullish: Very strong buy signals (score > 0.6)
+  strongBullish,   // Strong bullish: Strong buy signals (score 0.4 to 0.6)
+  weakBullish,     // Weak bullish: Moderate buy signals (score 0.15 to 0.4)
+  ranging,         // Ranging/Neutral: Mixed signals (score -0.15 to 0.15)
+  weakBearish,     // Weak bearish: Moderate sell signals (score -0.4 to -0.15)
+  strongBearish,   // Strong bearish: Strong sell signals (score -0.6 to -0.4)
+  extremeBearish,  // Extreme bearish: Very strong sell signals (score < -0.6)
 }
 
 /// Bollinger Bands values
@@ -841,4 +854,790 @@ List<double> calculateEMASeries(List<double> prices, int period) {
 /// Returns BollingerBands object
 BollingerBands calculateBollingerBandsDefault(List<double> prices) {
   return calculateBollingerBands(prices, 20, 2.0);
+}
+
+// ============================================================================
+// MACD INDICATOR
+// ============================================================================
+
+/// MACD histogram trend state
+enum MACDHistogramTrend {
+  improving,   // Histogram moving toward signal direction (bullish getting more bullish or bearish getting more bearish)
+  worsening,   // Histogram moving against signal direction (bullish weakening or bearish weakening)
+  crossing,    // Histogram crossed zero line recently
+  sideways,    // Histogram flat/choppy
+}
+
+/// MACD (Moving Average Convergence Divergence) values
+class MACD {
+  final double macdLine;      // Fast EMA - Slow EMA
+  final double signalLine;    // Signal line (EMA of MACD line)
+  final double histogram;     // MACD line - Signal line
+
+  MACD({
+    required this.macdLine,
+    required this.signalLine,
+    required this.histogram,
+  });
+
+  /// Is MACD bullish? (MACD > Signal)
+  bool get isBullish => macdLine > signalLine;
+
+  /// Is MACD bearish? (MACD < Signal)
+  bool get isBearish => macdLine < signalLine;
+
+  /// Histogram strength (absolute value)
+  double get histogramStrength => histogram.abs();
+
+  @override
+  String toString() {
+    return 'MACD(line: ${macdLine.toStringAsFixed(4)}, signal: ${signalLine.toStringAsFixed(4)}, histogram: ${histogram.toStringAsFixed(4)})';
+  }
+}
+
+/// Calculates MACD (Moving Average Convergence Divergence)
+///
+/// [prices] - List of prices (oldest first)
+/// [fastPeriod] - Fast EMA period (typically 12)
+/// [slowPeriod] - Slow EMA period (typically 26)
+/// [signalPeriod] - Signal line EMA period (typically 9)
+///
+/// Returns MACD object with current values
+MACD calculateMACD(
+  List<double> prices, {
+  int fastPeriod = 12,
+  int slowPeriod = 26,
+  int signalPeriod = 9,
+}) {
+  if (prices.length < slowPeriod + signalPeriod) {
+    throw ArgumentError('Need at least ${slowPeriod + signalPeriod} price points for MACD');
+  }
+
+  // Calculate fast and slow EMAs
+  final fastEMA = calculateEMA(prices, fastPeriod);
+  final slowEMA = calculateEMA(prices, slowPeriod);
+
+  // MACD line = Fast EMA - Slow EMA
+  final macdLine = fastEMA - slowEMA;
+
+  // Calculate signal line (EMA of MACD line)
+  // We need to calculate MACD series first
+  final macdSeries = calculateMACDSeries(
+    prices,
+    fastPeriod: fastPeriod,
+    slowPeriod: slowPeriod,
+  );
+
+  // Signal line is EMA of MACD series
+  final signalLine = calculateEMA(macdSeries, signalPeriod);
+
+  // Histogram = MACD line - Signal line
+  final histogram = macdLine - signalLine;
+
+  return MACD(
+    macdLine: macdLine,
+    signalLine: signalLine,
+    histogram: histogram,
+  );
+}
+
+/// Calculates MACD series (returns MACD line value for each candle)
+///
+/// [prices] - List of prices (oldest first)
+/// [fastPeriod] - Fast EMA period (typically 12)
+/// [slowPeriod] - Slow EMA period (typically 26)
+///
+/// Returns list of MACD line values
+List<double> calculateMACDSeries(
+  List<double> prices, {
+  int fastPeriod = 12,
+  int slowPeriod = 26,
+}) {
+  if (prices.length < slowPeriod) {
+    return [];
+  }
+
+  final macdValues = <double>[];
+
+  // Calculate EMA series for fast and slow
+  final fastEMASeries = calculateEMASeries(prices, fastPeriod);
+  final slowEMASeries = calculateEMASeries(prices, slowPeriod);
+
+  // MACD line = Fast EMA - Slow EMA
+  // Note: slowEMASeries starts later (at index slowPeriod-1)
+  // fastEMASeries starts at index fastPeriod-1
+  // So we need to align them
+  final startIndex = slowPeriod - fastPeriod;
+  for (int i = 0; i < slowEMASeries.length; i++) {
+    final macdLine = fastEMASeries[startIndex + i] - slowEMASeries[i];
+    macdValues.add(macdLine);
+  }
+
+  return macdValues;
+}
+
+/// Calculates full MACD series with histogram
+///
+/// [prices] - List of prices (oldest first)
+/// [fastPeriod] - Fast EMA period (typically 12)
+/// [slowPeriod] - Slow EMA period (typically 26)
+/// [signalPeriod] - Signal line period (typically 9)
+///
+/// Returns list of MACD objects
+List<MACD> calculateMACDFullSeries(
+  List<double> prices, {
+  int fastPeriod = 12,
+  int slowPeriod = 26,
+  int signalPeriod = 9,
+}) {
+  if (prices.length < slowPeriod + signalPeriod) {
+    return [];
+  }
+
+  final macdObjects = <MACD>[];
+
+  // Calculate MACD line series
+  final macdLineSeries = calculateMACDSeries(
+    prices,
+    fastPeriod: fastPeriod,
+    slowPeriod: slowPeriod,
+  );
+
+  // Calculate signal line series (EMA of MACD line)
+  final signalLineSeries = calculateEMASeries(macdLineSeries, signalPeriod);
+
+  // Create MACD objects with histogram
+  // signalLineSeries starts at index signalPeriod-1 relative to macdLineSeries
+  final startIndex = signalPeriod - 1;
+  for (int i = 0; i < signalLineSeries.length; i++) {
+    final macdLine = macdLineSeries[startIndex + i];
+    final signalLine = signalLineSeries[i];
+    final histogram = macdLine - signalLine;
+
+    macdObjects.add(MACD(
+      macdLine: macdLine,
+      signalLine: signalLine,
+      histogram: histogram,
+    ));
+  }
+
+  return macdObjects;
+}
+
+/// Determines MACD histogram trend state
+///
+/// [macdSeries] - List of MACD objects (oldest first, minimum 3)
+/// [lookbackPeriod] - How many recent candles to analyze (default: 3)
+///
+/// Returns MACDHistogramTrend state
+MACDHistogramTrend getMACDHistogramTrend(
+  List<MACD> macdSeries, {
+  int lookbackPeriod = 3,
+}) {
+  if (macdSeries.length < lookbackPeriod) {
+    return MACDHistogramTrend.sideways;
+  }
+
+  // Get recent histograms
+  final recentHistograms = macdSeries
+      .skip(macdSeries.length - lookbackPeriod)
+      .map((m) => m.histogram)
+      .toList();
+
+  final currentHistogram = recentHistograms.last;
+  final previousHistogram = recentHistograms[recentHistograms.length - 2];
+
+  // Check for zero crossing
+  if ((previousHistogram >= 0 && currentHistogram < 0) ||
+      (previousHistogram <= 0 && currentHistogram > 0)) {
+    return MACDHistogramTrend.crossing;
+  }
+
+  // Calculate histogram slope (change over lookback period)
+  final histogramChange = currentHistogram - recentHistograms.first;
+  final changeThreshold = currentHistogram.abs() * 0.05; // 5% change threshold
+
+  // IMPROVING: Histogram moving away from zero (strengthening)
+  // - If positive and increasing → improving bullish
+  // - If negative and decreasing (more negative) → improving bearish
+  if (currentHistogram > 0 && histogramChange > changeThreshold) {
+    return MACDHistogramTrend.improving;
+  }
+  if (currentHistogram < 0 && histogramChange < -changeThreshold) {
+    return MACDHistogramTrend.improving;
+  }
+
+  // WORSENING: Histogram moving toward zero (weakening)
+  // - If positive and decreasing → worsening bullish
+  // - If negative and increasing (less negative) → worsening bearish
+  if (currentHistogram > 0 && histogramChange < -changeThreshold) {
+    return MACDHistogramTrend.worsening;
+  }
+  if (currentHistogram < 0 && histogramChange > changeThreshold) {
+    return MACDHistogramTrend.worsening;
+  }
+
+  // SIDEWAYS: No significant change
+  return MACDHistogramTrend.sideways;
+}
+
+// ============================================================================
+// VOLUME ANALYZER
+// ============================================================================
+
+/// Volume analysis result
+class VolumeAnalysis {
+  final double currentVolume;
+  final double volumeMA20;
+  final double relativeVolumeRatio; // current / MA20
+  final bool isHighVolume;          // Ratio > 1.5x
+  final bool isLowVolume;           // Ratio < 0.5x
+  final double score;               // Volume score: -1.0 (very low) to +1.0 (very high)
+
+  VolumeAnalysis({
+    required this.currentVolume,
+    required this.volumeMA20,
+    required this.relativeVolumeRatio,
+    required this.isHighVolume,
+    required this.isLowVolume,
+    required this.score,
+  });
+
+  @override
+  String toString() {
+    return 'Volume(current: ${currentVolume.toStringAsFixed(0)}, MA20: ${volumeMA20.toStringAsFixed(0)}, ratio: ${relativeVolumeRatio.toStringAsFixed(2)}x, score: ${score.toStringAsFixed(2)})';
+  }
+}
+
+/// Analyzes volume
+///
+/// [volumes] - List of volumes (oldest first)
+/// [highVolumeThreshold] - Threshold for high volume (default: 1.5x MA20)
+/// [lowVolumeThreshold] - Threshold for low volume (default: 0.5x MA20)
+///
+/// Returns VolumeAnalysis object
+VolumeAnalysis analyzeVolume(
+  List<double> volumes, {
+  double highVolumeThreshold = 1.5,
+  double lowVolumeThreshold = 0.5,
+}) {
+  if (volumes.length < 20) {
+    throw ArgumentError('Need at least 20 volume points for volume analysis');
+  }
+
+  final currentVolume = volumes.last;
+  final volumeMA20 = calculateSMA(volumes, 20);
+
+  // Calculate relative volume ratio
+  final relativeVolumeRatio = currentVolume / volumeMA20;
+
+  // Determine high/low volume flags
+  final isHighVolume = relativeVolumeRatio >= highVolumeThreshold;
+  final isLowVolume = relativeVolumeRatio <= lowVolumeThreshold;
+
+  // Calculate volume score (-1.0 to +1.0)
+  // Very high volume (3x+) = +1.0
+  // Normal volume (1x) = 0.0
+  // Very low volume (0.33x or less) = -1.0
+  double score;
+  if (relativeVolumeRatio >= 3.0) {
+    score = 1.0;
+  } else if (relativeVolumeRatio >= 1.0) {
+    // Linear scale from 0.0 to 1.0 (1x to 3x)
+    score = (relativeVolumeRatio - 1.0) / 2.0;
+  } else if (relativeVolumeRatio >= 0.33) {
+    // Linear scale from -1.0 to 0.0 (0.33x to 1x)
+    score = (relativeVolumeRatio - 1.0) / 0.67;
+  } else {
+    score = -1.0;
+  }
+
+  return VolumeAnalysis(
+    currentVolume: currentVolume,
+    volumeMA20: volumeMA20,
+    relativeVolumeRatio: relativeVolumeRatio,
+    isHighVolume: isHighVolume,
+    isLowVolume: isLowVolume,
+    score: score,
+  );
+}
+
+// ============================================================================
+// PRICE ACTION ANALYZER
+// ============================================================================
+
+/// Price action analysis result
+class PriceActionAnalysis {
+  final double priceChangePercent;  // Recent price change (last 5 candles)
+  final bool isStrongUpMove;        // Price up > 1.5%
+  final bool isStrongDownMove;      // Price down > 1.5%
+  final double momentum;            // Momentum score
+  final double score;               // Price action score: -1.0 (strong down) to +1.0 (strong up)
+
+  PriceActionAnalysis({
+    required this.priceChangePercent,
+    required this.isStrongUpMove,
+    required this.isStrongDownMove,
+    required this.momentum,
+    required this.score,
+  });
+
+  @override
+  String toString() {
+    return 'PriceAction(change: ${(priceChangePercent * 100).toStringAsFixed(2)}%, momentum: ${momentum.toStringAsFixed(2)}, score: ${score.toStringAsFixed(2)})';
+  }
+}
+
+/// Analyzes price action (momentum and recent price changes)
+///
+/// [closePrices] - List of prices (oldest first)
+/// [lookbackPeriod] - Number of candles to analyze (default: 5)
+///
+/// Returns PriceActionAnalysis object
+PriceActionAnalysis analyzePriceAction(
+  List<double> closePrices, {
+  int lookbackPeriod = 5,
+}) {
+  if (closePrices.length < lookbackPeriod + 1) {
+    throw ArgumentError('Need at least ${lookbackPeriod + 1} price points for price action analysis');
+  }
+
+  // Calculate recent price change
+  final recentPrices = closePrices.skip(closePrices.length - lookbackPeriod).toList();
+  final priceChangePercent = (recentPrices.last - recentPrices.first) / recentPrices.first;
+
+  // Determine strong moves
+  final isStrongUpMove = priceChangePercent >= 0.015;   // +1.5% or more
+  final isStrongDownMove = priceChangePercent <= -0.015; // -1.5% or more
+
+  // Calculate momentum (average of recent candle changes)
+  double totalChange = 0.0;
+  for (int i = 1; i < recentPrices.length; i++) {
+    totalChange += (recentPrices[i] - recentPrices[i - 1]) / recentPrices[i - 1];
+  }
+  final momentum = totalChange / (recentPrices.length - 1);
+
+  // Calculate price action score (-1.0 to +1.0)
+  // Strong up move (3%+) = +1.0
+  // Neutral (0%) = 0.0
+  // Strong down move (3%-) = -1.0
+  double score;
+  if (priceChangePercent >= 0.03) {
+    score = 1.0;
+  } else if (priceChangePercent >= 0.0) {
+    // Linear scale from 0.0 to 1.0 (0% to 3%)
+    score = priceChangePercent / 0.03;
+  } else if (priceChangePercent >= -0.03) {
+    // Linear scale from -1.0 to 0.0 (-3% to 0%)
+    score = priceChangePercent / 0.03;
+  } else {
+    score = -1.0;
+  }
+
+  return PriceActionAnalysis(
+    priceChangePercent: priceChangePercent,
+    isStrongUpMove: isStrongUpMove,
+    isStrongDownMove: isStrongDownMove,
+    momentum: momentum,
+    score: score,
+  );
+}
+
+// ============================================================================
+// MOVING AVERAGE TREND ANALYZER
+// ============================================================================
+
+/// MA trend analysis result
+class MATrendAnalysis {
+  final double ema9;
+  final double ema21;
+  final double ema50;
+  final bool isPerfectUptrend;   // EMA9 > EMA21 > EMA50
+  final bool isPerfectDowntrend; // EMA9 < EMA21 < EMA50
+  final bool isPartialUptrend;   // EMA9 > EMA21
+  final bool isPartialDowntrend; // EMA9 < EMA21
+  final double score;            // MA trend score: -1.0 (strong downtrend) to +1.0 (strong uptrend)
+
+  MATrendAnalysis({
+    required this.ema9,
+    required this.ema21,
+    required this.ema50,
+    required this.isPerfectUptrend,
+    required this.isPerfectDowntrend,
+    required this.isPartialUptrend,
+    required this.isPartialDowntrend,
+    required this.score,
+  });
+
+  @override
+  String toString() {
+    return 'MATrend(EMA9: ${ema9.toStringAsFixed(2)}, EMA21: ${ema21.toStringAsFixed(2)}, EMA50: ${ema50.toStringAsFixed(2)}, score: ${score.toStringAsFixed(2)})';
+  }
+}
+
+/// Analyzes MA trend alignment
+///
+/// [closePrices] - List of prices (oldest first)
+///
+/// Returns MATrendAnalysis object
+MATrendAnalysis analyzeMATrend(List<double> closePrices) {
+  if (closePrices.length < 50) {
+    throw ArgumentError('Need at least 50 price points for MA trend analysis');
+  }
+
+  // Calculate EMAs
+  final ema9 = calculateEMA(closePrices, 9);
+  final ema21 = calculateEMA(closePrices, 21);
+  final ema50 = calculateEMA(closePrices, 50);
+
+  // Check trend alignment
+  final isPerfectUptrend = ema9 > ema21 && ema21 > ema50;
+  final isPerfectDowntrend = ema9 < ema21 && ema21 < ema50;
+  final isPartialUptrend = ema9 > ema21;
+  final isPartialDowntrend = ema9 < ema21;
+
+  // Calculate MA trend score (-1.0 to +1.0)
+  double score;
+  if (isPerfectUptrend) {
+    // Perfect uptrend: check strength by distance between EMAs
+    final gap9_21 = (ema9 - ema21) / ema21;
+    final gap21_50 = (ema21 - ema50) / ema50;
+    final avgGap = (gap9_21 + gap21_50) / 2;
+
+    // If gaps are > 2%, score = 1.0; scale linearly from 0.5 to 1.0
+    if (avgGap >= 0.02) {
+      score = 1.0;
+    } else {
+      score = 0.5 + (avgGap / 0.02) * 0.5;
+    }
+  } else if (isPerfectDowntrend) {
+    // Perfect downtrend: check strength by distance between EMAs
+    final gap9_21 = (ema21 - ema9) / ema21;
+    final gap21_50 = (ema50 - ema21) / ema50;
+    final avgGap = (gap9_21 + gap21_50) / 2;
+
+    // If gaps are > 2%, score = -1.0; scale linearly from -0.5 to -1.0
+    if (avgGap >= 0.02) {
+      score = -1.0;
+    } else {
+      score = -0.5 - (avgGap / 0.02) * 0.5;
+    }
+  } else if (isPartialUptrend) {
+    // Partial uptrend: weaker signal
+    final gap = (ema9 - ema21) / ema21;
+    score = 0.25 + (gap / 0.02) * 0.25;
+    if (score > 0.5) score = 0.5;
+  } else if (isPartialDowntrend) {
+    // Partial downtrend: weaker signal
+    final gap = (ema21 - ema9) / ema21;
+    score = -0.25 - (gap / 0.02) * 0.25;
+    if (score < -0.5) score = -0.5;
+  } else {
+    // Choppy/ranging
+    score = 0.0;
+  }
+
+  return MATrendAnalysis(
+    ema9: ema9,
+    ema21: ema21,
+    ema50: ema50,
+    isPerfectUptrend: isPerfectUptrend,
+    isPerfectDowntrend: isPerfectDowntrend,
+    isPartialUptrend: isPartialUptrend,
+    isPartialDowntrend: isPartialDowntrend,
+    score: score,
+  );
+}
+
+// ============================================================================
+// COMPOSITE MULTI-INDICATOR ANALYZER
+// ============================================================================
+
+/// Signal confidence level
+enum SignalConfidence {
+  high,    // Multiple confirmations (75%+ indicators agree)
+  medium,  // Some confirmations (50-75% indicators agree)
+  low,     // Weak signal (<50% indicators agree)
+}
+
+/// Composite market analysis result
+class CompositeAnalysis {
+  // Individual indicator results
+  final double rsi;
+  final VolumeAnalysis volume;
+  final PriceActionAnalysis priceAction;
+  final MATrendAnalysis maTrend;
+  final BollingerBands bb;
+  final MACD macd;
+  final MACDHistogramTrend macdTrend;
+
+  // Composite score and classification
+  final double compositeScore;                    // -1.0 (extreme bearish) to +1.0 (extreme bullish)
+  final EnhancedMarketCondition marketCondition;  // 7-level market classification
+  final SignalConfidence confidence;
+
+  // Individual component scores (weighted)
+  final double rsiScore;           // RSI contribution (25%)
+  final double volumeScore;        // Volume contribution (20%)
+  final double priceActionScore;   // Price action contribution (20%)
+  final double maTrendScore;       // MA trend contribution (15%)
+  final double bbScore;            // BB contribution (10%)
+  final double macdScore;          // MACD contribution (10%)
+
+  CompositeAnalysis({
+    required this.rsi,
+    required this.volume,
+    required this.priceAction,
+    required this.maTrend,
+    required this.bb,
+    required this.macd,
+    required this.macdTrend,
+    required this.compositeScore,
+    required this.marketCondition,
+    required this.confidence,
+    required this.rsiScore,
+    required this.volumeScore,
+    required this.priceActionScore,
+    required this.maTrendScore,
+    required this.bbScore,
+    required this.macdScore,
+  });
+
+  /// Is the composite signal bullish?
+  bool get isBullish => compositeScore > 0.15;
+
+  /// Is the composite signal bearish?
+  bool get isBearish => compositeScore < -0.15;
+
+  /// Is the signal neutral/ranging?
+  bool get isRanging => !isBullish && !isBearish;
+
+  @override
+  String toString() {
+    // Format market condition name
+    String marketConditionName;
+    switch (marketCondition) {
+      case EnhancedMarketCondition.extremeBullish:
+        marketConditionName = 'EXTREME BULLISH 🚀';
+        break;
+      case EnhancedMarketCondition.strongBullish:
+        marketConditionName = 'STRONG BULLISH 📈';
+        break;
+      case EnhancedMarketCondition.weakBullish:
+        marketConditionName = 'WEAK BULLISH 📊';
+        break;
+      case EnhancedMarketCondition.ranging:
+        marketConditionName = 'RANGING ↔️';
+        break;
+      case EnhancedMarketCondition.weakBearish:
+        marketConditionName = 'WEAK BEARISH 📉';
+        break;
+      case EnhancedMarketCondition.strongBearish:
+        marketConditionName = 'STRONG BEARISH 📉📉';
+        break;
+      case EnhancedMarketCondition.extremeBearish:
+        marketConditionName = 'EXTREME BEARISH 💥';
+        break;
+    }
+
+    final currentPrice = bb.middle; // Approximation
+    final pricePositionInBB = ((currentPrice - bb.lower) / (bb.upper - bb.lower) * 100);
+
+    return 'CompositeAnalysis(\n'
+        '  Market: $marketConditionName\n'
+        '  Composite Score: ${compositeScore.toStringAsFixed(2)} (Confidence: ${confidence.name.toUpperCase()})\n'
+        '  ───────────────────────────────────────\n'
+        '  RSI: ${rsi.toStringAsFixed(2)} (score: ${rsiScore.toStringAsFixed(2)})\n'
+        '  Volume: ${volume.relativeVolumeRatio.toStringAsFixed(2)}x (score: ${volumeScore.toStringAsFixed(2)})\n'
+        '  Price Action: ${(priceAction.priceChangePercent * 100).toStringAsFixed(2)}% (score: ${priceActionScore.toStringAsFixed(2)})\n'
+        '  MA Trend: ${maTrend.isPerfectUptrend ? "Perfect Up" : maTrend.isPerfectDowntrend ? "Perfect Down" : "Mixed"} (score: ${maTrendScore.toStringAsFixed(2)})\n'
+        '  BB Position: ${pricePositionInBB.toStringAsFixed(0)}% (score: ${bbScore.toStringAsFixed(2)})\n'
+        '  MACD: ${macd.isBullish ? "Bullish" : "Bearish"} ${macdTrend.name} (score: ${macdScore.toStringAsFixed(2)})\n'
+        ')';
+  }
+}
+
+/// Determines enhanced market condition from composite score
+///
+/// [compositeScore] - Composite score from -1.0 to +1.0
+///
+/// Returns EnhancedMarketCondition
+EnhancedMarketCondition getMarketConditionFromScore(double compositeScore) {
+  if (compositeScore > 0.6) {
+    return EnhancedMarketCondition.extremeBullish;
+  } else if (compositeScore > 0.4) {
+    return EnhancedMarketCondition.strongBullish;
+  } else if (compositeScore > 0.15) {
+    return EnhancedMarketCondition.weakBullish;
+  } else if (compositeScore >= -0.15) {
+    return EnhancedMarketCondition.ranging;
+  } else if (compositeScore >= -0.4) {
+    return EnhancedMarketCondition.weakBearish;
+  } else if (compositeScore >= -0.6) {
+    return EnhancedMarketCondition.strongBearish;
+  } else {
+    return EnhancedMarketCondition.extremeBearish;
+  }
+}
+
+/// Calculates composite multi-indicator analysis
+///
+/// Weights:
+/// - RSI: 25%
+/// - Volume: 20%
+/// - Price Action: 20%
+/// - MA Trend: 15%
+/// - Bollinger Bands: 10%
+/// - MACD: 10%
+///
+/// [closePrices] - List of prices (oldest first, minimum 50)
+/// [volumes] - List of volumes (oldest first, minimum 50)
+///
+/// Returns CompositeAnalysis object
+CompositeAnalysis analyzeMarketComposite(
+  List<double> closePrices,
+  List<double> volumes,
+) {
+  if (closePrices.length < 50) {
+    throw ArgumentError('Need at least 50 price points for composite analysis');
+  }
+  if (volumes.length < 50) {
+    throw ArgumentError('Need at least 50 volume points for composite analysis');
+  }
+
+  // Calculate individual indicators
+  final rsi = calculateRSI(closePrices, 14);
+  final volumeAnalysis = analyzeVolume(volumes);
+  final priceActionAnalysis = analyzePriceAction(closePrices);
+  final maTrendAnalysis = analyzeMATrend(closePrices);
+  final bb = calculateBollingerBandsDefault(closePrices);
+  final macdFullSeries = calculateMACDFullSeries(closePrices);
+  final macd = macdFullSeries.last;
+  final macdTrend = getMACDHistogramTrend(macdFullSeries);
+
+  // Calculate RSI score (25% weight)
+  // Oversold (RSI < 30) = +1.0, Overbought (RSI > 70) = -1.0, Neutral (50) = 0.0
+  double rsiComponentScore;
+  if (rsi <= 30) {
+    rsiComponentScore = 1.0;
+  } else if (rsi >= 70) {
+    rsiComponentScore = -1.0;
+  } else if (rsi < 50) {
+    // Linear scale from +1.0 to 0.0 (RSI 30 to 50)
+    rsiComponentScore = (50 - rsi) / 20;
+  } else {
+    // Linear scale from 0.0 to -1.0 (RSI 50 to 70)
+    rsiComponentScore = -(rsi - 50) / 20;
+  }
+  final rsiScore = rsiComponentScore * 0.25;
+
+  // Volume score (20% weight)
+  final volumeScore = volumeAnalysis.score * 0.20;
+
+  // Price action score (20% weight)
+  final priceActionScore = priceActionAnalysis.score * 0.20;
+
+  // MA trend score (15% weight)
+  final maTrendScore = maTrendAnalysis.score * 0.15;
+
+  // BB score (10% weight)
+  // Price near lower band = +1.0 (oversold), near upper band = -1.0 (overbought)
+  final currentPrice = closePrices.last;
+  final bbRange = bb.upper - bb.lower;
+  final pricePositionInBB = (currentPrice - bb.lower) / bbRange;
+  double bbComponentScore;
+  if (pricePositionInBB <= 0.2) {
+    bbComponentScore = 1.0;  // Near lower band
+  } else if (pricePositionInBB >= 0.8) {
+    bbComponentScore = -1.0; // Near upper band
+  } else {
+    // Linear scale from +1.0 to -1.0 (position 0.2 to 0.8)
+    bbComponentScore = 1.0 - ((pricePositionInBB - 0.2) / 0.6) * 2.0;
+  }
+  final bbScore = bbComponentScore * 0.10;
+
+  // MACD score (10% weight)
+  // Combines histogram direction and trend state
+  double macdComponentScore;
+  if (macd.histogram > 0) {
+    // Bullish histogram
+    if (macdTrend == MACDHistogramTrend.improving) {
+      macdComponentScore = 1.0;  // Strong bullish
+    } else if (macdTrend == MACDHistogramTrend.worsening) {
+      macdComponentScore = 0.3;  // Weakening bullish
+    } else if (macdTrend == MACDHistogramTrend.crossing) {
+      macdComponentScore = 0.5;  // Just crossed bullish
+    } else {
+      macdComponentScore = 0.5;  // Sideways bullish
+    }
+  } else {
+    // Bearish histogram
+    if (macdTrend == MACDHistogramTrend.improving) {
+      macdComponentScore = -1.0; // Strong bearish
+    } else if (macdTrend == MACDHistogramTrend.worsening) {
+      macdComponentScore = -0.3; // Weakening bearish
+    } else if (macdTrend == MACDHistogramTrend.crossing) {
+      macdComponentScore = -0.5; // Just crossed bearish
+    } else {
+      macdComponentScore = -0.5; // Sideways bearish
+    }
+  }
+  final macdScore = macdComponentScore * 0.10;
+
+  // Calculate composite score
+  final compositeScore = rsiScore + volumeScore + priceActionScore +
+                         maTrendScore + bbScore + macdScore;
+
+  // Determine confidence level
+  // Count how many indicators agree with the composite direction
+  int agreeCount = 0;
+  final isBullishComposite = compositeScore > 0;
+
+  if (isBullishComposite) {
+    if (rsiComponentScore > 0) agreeCount++;
+    if (volumeAnalysis.score > 0) agreeCount++;
+    if (priceActionAnalysis.score > 0) agreeCount++;
+    if (maTrendAnalysis.score > 0) agreeCount++;
+    if (bbComponentScore > 0) agreeCount++;
+    if (macdComponentScore > 0) agreeCount++;
+  } else {
+    if (rsiComponentScore < 0) agreeCount++;
+    if (volumeAnalysis.score < 0) agreeCount++;
+    if (priceActionAnalysis.score < 0) agreeCount++;
+    if (maTrendAnalysis.score < 0) agreeCount++;
+    if (bbComponentScore < 0) agreeCount++;
+    if (macdComponentScore < 0) agreeCount++;
+  }
+
+  final agreementPercent = agreeCount / 6.0;
+  SignalConfidence confidence;
+  if (agreementPercent >= 0.75) {
+    confidence = SignalConfidence.high;
+  } else if (agreementPercent >= 0.50) {
+    confidence = SignalConfidence.medium;
+  } else {
+    confidence = SignalConfidence.low;
+  }
+
+  // Determine market condition
+  final marketCondition = getMarketConditionFromScore(compositeScore);
+
+  return CompositeAnalysis(
+    rsi: rsi,
+    volume: volumeAnalysis,
+    priceAction: priceActionAnalysis,
+    maTrend: maTrendAnalysis,
+    bb: bb,
+    macd: macd,
+    macdTrend: macdTrend,
+    compositeScore: compositeScore,
+    marketCondition: marketCondition,
+    confidence: confidence,
+    rsiScore: rsiScore,
+    volumeScore: volumeScore,
+    priceActionScore: priceActionScore,
+    maTrendScore: maTrendScore,
+    bbScore: bbScore,
+    macdScore: macdScore,
+  );
 }
