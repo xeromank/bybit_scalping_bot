@@ -5,6 +5,7 @@ import 'package:bybit_scalping_bot/providers/coinone_balance_provider.dart';
 import 'package:bybit_scalping_bot/providers/coinone_trading_provider.dart';
 import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
 import 'package:bybit_scalping_bot/screens/coinone_withdrawal_screen.dart';
+import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_balance.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_ticker.dart';
@@ -349,6 +350,18 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
           ],
         ),
         actions: [
+          // Live Chart button
+          IconButton(
+            icon: const Icon(Icons.show_chart),
+            tooltip: '실시간 차트',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const LiveChartScreen(),
+                ),
+              );
+            },
+          ),
           // Withdrawal button
           IconButton(
             icon: const Icon(Icons.send),

@@ -76,6 +76,9 @@ dependencies:
   # Excel file generation for backtest results
   excel: ^4.0.3
 
+  # Professional charts for trading
+  syncfusion_flutter_charts: ^27.1.48
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

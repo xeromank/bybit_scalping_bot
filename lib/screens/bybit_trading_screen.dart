@@ -12,6 +12,7 @@ import 'package:bybit_scalping_bot/widgets/bybit/real_time_price_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/technical_indicators_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/trade_logs_card.dart';
 import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
+import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
 
 /// Bybit Trading Screen (New Adaptive Strategy System)
 ///
@@ -64,6 +65,17 @@ class _BybitTradingScreenState extends State<BybitTradingScreen>
           style: TextStyle(color: Colors.white),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.show_chart, color: Colors.white),
+            tooltip: '실시간 차트',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const LiveChartScreen(),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             tooltip: '로그아웃',

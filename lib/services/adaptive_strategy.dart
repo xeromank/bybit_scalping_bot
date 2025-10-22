@@ -87,14 +87,24 @@ class AdaptiveStrategy {
           description: 'Band Walking 추세 추종 (롱 전용)',
         );
 
-      case MarketCondition.bullish:
+      case MarketCondition.strongBullish:
+        return StrategyConfig(
+          takeProfitPercent: 0.010, // 1.0%
+          stopLossPercent: 0.004, // 0.4%
+          recommendedLeverage: 8,
+          useTrailingStop: false,
+          trailingStopTrigger: 0.006,
+          description: '강세장 추세 추종 (롱 위주)',
+        );
+
+      case MarketCondition.weakBullish:
         return StrategyConfig(
           takeProfitPercent: 0.008, // 0.8%
           stopLossPercent: 0.004, // 0.4%
           recommendedLeverage: 10,
           useTrailingStop: false,
           trailingStopTrigger: 0.006,
-          description: '풀백 롱 진입',
+          description: '약한 강세장 평균회귀',
         );
 
       case MarketCondition.ranging:
@@ -107,14 +117,24 @@ class AdaptiveStrategy {
           description: '볼린저 밴드 역추세',
         );
 
-      case MarketCondition.bearish:
+      case MarketCondition.weakBearish:
         return StrategyConfig(
           takeProfitPercent: 0.008, // 0.8%
           stopLossPercent: 0.004, // 0.4%
           recommendedLeverage: 10,
           useTrailingStop: false,
           trailingStopTrigger: 0.006,
-          description: '풀백 숏 진입',
+          description: '약한 약세장 평균회귀',
+        );
+
+      case MarketCondition.strongBearish:
+        return StrategyConfig(
+          takeProfitPercent: 0.010, // 1.0%
+          stopLossPercent: 0.004, // 0.4%
+          recommendedLeverage: 8,
+          useTrailingStop: false,
+          trailingStopTrigger: 0.006,
+          description: '약세장 추세 추종 (숏 위주)',
         );
 
       case MarketCondition.extremeBearish:
@@ -164,7 +184,8 @@ class AdaptiveStrategy {
           strategyConfig: strategyConfig,
         );
 
-      case MarketCondition.bullish:
+      case MarketCondition.strongBullish:
+      case MarketCondition.weakBullish:
         return _analyzeBullishSignal(
           closePrices: closePrices,
           volumes: volumes,
@@ -180,7 +201,8 @@ class AdaptiveStrategy {
           strategyConfig: strategyConfig,
         );
 
-      case MarketCondition.bearish:
+      case MarketCondition.weakBearish:
+      case MarketCondition.strongBearish:
         return _analyzeBearishSignal(
           closePrices: closePrices,
           volumes: volumes,

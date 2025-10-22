@@ -23,6 +23,10 @@ import 'package:bybit_scalping_bot/providers/coinone_withdrawal_provider.dart';
 import 'package:bybit_scalping_bot/screens/coinone_trading_screen.dart';
 import 'package:bybit_scalping_bot/core/enums/exchange_type.dart';
 
+// Live Chart imports
+import 'package:bybit_scalping_bot/providers/live_chart_provider.dart';
+import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
+
 /// Main entry point for the refactored application
 ///
 /// This file demonstrates proper dependency injection and follows
@@ -58,6 +62,11 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        // Live Chart Provider (실시간 차트 - 인증 불필요)
+        ChangeNotifierProvider(
+          create: (context) => LiveChartProvider(),
+        ),
+
         // Auth Provider (manages authentication state)
         ChangeNotifierProvider(
           create: (context) => AuthProvider(
