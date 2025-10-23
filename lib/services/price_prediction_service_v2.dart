@@ -404,6 +404,11 @@ class _PredictionMultipliers {
 ///
 /// 기존 5분봉 여러 개와 각 타임 인터벌의 추세를 비교하여
 /// 상승 추세일 확률을 반환 (0.0~1.0)
+///
+/// 개선사항 (1시간봉 오차 감소):
+/// - EMA/MACD 추세 가중치 증가
+/// - 볼륨 가중 평균 적용
+/// - RSI 과매수/과매도 구간 페널티
 double _calculateTrendProbability(
   List<KlineData> klines5m,
   List<KlineData> klines30m,
@@ -421,41 +426,78 @@ double _calculateTrendProbability(
     candlesToAnalyze = 100; // 4시간 = 48개 * 2개 샘플
   }
 
-  // 5분봉 추세 방향 분석
-  int upCount5m = 0;
-  int totalCount5m = 0;
+  // 5분봉 추세 방향 분석 (볼륨 가중 적용)
+  double upWeight5m = 0;
+  double totalWeight5m = 0;
 
   for (int i = 1; i < klines5m.length.clamp(0, candlesToAnalyze); i++) {
     final prev = klines5m[i];
     final curr = klines5m[i - 1];
 
+    // 볼륨 가중치 (최근 캔들일수록 + 볼륨이 클수록 가중치 높음)
+    final recencyWeight = 1.0 + (candlesToAnalyze - i) / candlesToAnalyze; // 1.0 ~ 2.0
+    final volumeWeight = curr.volume / klines5m.take(candlesToAnalyze).map((k) => k.volume).reduce((a, b) => a + b) * candlesToAnalyze;
+    final weight = recencyWeight * (1.0 + volumeWeight);
+
     if (curr.close > prev.close) {
-      upCount5m++;
+      upWeight5m += weight;
     }
-    totalCount5m++;
+    totalWeight5m += weight;
   }
 
-  // 30분봉 추세 방향 분석 (가중치 2배)
-  int upCount30m = 0;
-  int totalCount30m = 0;
+  // 30분봉 추세 방향 분석 (가중치 3배로 증가 - EMA/MACD 반영 강화)
+  double upWeight30m = 0;
+  double totalWeight30m = 0;
+
+  final closePrices30m = klines30m.take(50).map((k) => k.close).toList();
+  final rsi30m = calculateRSI(closePrices30m, 14);
+  final ema9 = calculateEMA(closePrices30m, 9);
+  final ema21 = calculateEMA(closePrices30m, 21);
+  final macd = calculateMACDFullSeries(closePrices30m).last;
 
   for (int i = 1; i < klines30m.length.clamp(0, 10); i++) {
     final prev = klines30m[i];
     final curr = klines30m[i - 1];
 
     if (curr.close > prev.close) {
-      upCount30m += 2; // 가중치
+      upWeight30m += 3.0; // 기존 2배 → 3배로 증가
     }
-    totalCount30m += 2;
+    totalWeight30m += 3.0;
+  }
+
+  // EMA 정렬 추가 가중치
+  if (ema9 > ema21) {
+    upWeight30m += 5.0; // 상승 정렬
+    totalWeight30m += 5.0;
+  } else {
+    totalWeight30m += 5.0; // 하락 정렬이지만 총 가중치는 증가
+  }
+
+  // MACD 추세 가중치
+  if (macd.histogram > 0) {
+    upWeight30m += macd.histogram.abs().clamp(0, 10); // MACD 강도 반영
+    totalWeight30m += 10.0;
+  } else {
+    totalWeight30m += 10.0;
+  }
+
+  // RSI 과매수/과매도 페널티 (반전 가능성)
+  if (rsi30m > 70) {
+    // 과매수: 하락 가능성 증가
+    upWeight30m -= 5.0;
+  } else if (rsi30m < 30) {
+    // 과매도: 상승 가능성 증가
+    upWeight30m += 5.0;
   }
 
   // 전체 상승 확률
-  final totalUp = upCount5m + upCount30m;
-  final total = totalCount5m + totalCount30m;
+  final totalUp = upWeight5m + upWeight30m;
+  final total = totalWeight5m + totalWeight30m;
 
   if (total == 0) return 0.5; // 중립
 
-  return totalUp / total;
+  // 0.0 ~ 1.0 범위로 클램핑
+  return (totalUp / total).clamp(0.0, 1.0);
 }
 
 /// 추세 방향 보정 적용
