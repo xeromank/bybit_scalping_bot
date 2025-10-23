@@ -86,11 +86,16 @@ class BybitTradingProvider extends ChangeNotifier {
 
   // Timers
   Timer? _marketAnalysisTimer; // Every 5 minutes
-  Timer? _balanceUpdateTimer; // Every 3 seconds
+  Timer? _balanceUpdateTimer; // Every 3 seconds (when bot running)
+  Timer? _realtimeBalanceTimer; // Every 5 seconds (always running)
 
   // Signal check throttling (실시간 체크, 하지만 최소 1초 간격)
   DateTime? _lastSignalCheck;
   static const _signalCheckThrottle = Duration(seconds: 1);
+
+  // Balance update throttling (from position updates)
+  DateTime? _lastBalanceUpdateFromPosition;
+  static const _balanceUpdateThrottle = Duration(seconds: 2);
 
   // Disposed flag
   bool _disposed = false;
@@ -200,7 +205,36 @@ class BybitTradingProvider extends ChangeNotifier {
     // Step 6: Analyze market once
     await _analyzeMarket();
 
+    // Step 7: Start realtime balance update timer (always running, 5 seconds interval)
+    _startRealtimeBalanceTimer();
+
     Logger.success('BybitTradingProvider: Initialized!');
+  }
+
+  /// Start realtime balance update timer (always running)
+  /// - 포지션이 있을 때: 2초마다 업데이트 (실시간 PnL 추적)
+  /// - 포지션이 없을 때: 10초마다 업데이트 (API 호출 절약)
+  void _startRealtimeBalanceTimer() {
+    _realtimeBalanceTimer?.cancel();
+    _realtimeBalanceTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!_disposed) {
+        // 포지션이 있을 때만 2초마다 업데이트, 없으면 10초마다
+        final hasPosition = _currentPosition != null &&
+            _currentPosition!.size != '0' &&
+            double.tryParse(_currentPosition!.size) != 0;
+        final now = DateTime.now();
+
+        if (hasPosition) {
+          // 포지션 있음: 2초마다 업데이트
+          fetchBalance();
+        } else if (_lastBalanceUpdate == null ||
+                   now.difference(_lastBalanceUpdate!) >= const Duration(seconds: 10)) {
+          // 포지션 없음: 10초마다 업데이트
+          fetchBalance();
+        }
+      }
+    });
+    Logger.debug('BybitTradingProvider: Realtime balance timer started (dynamic: 2s with position, 10s without)');
   }
 
   // ============================================================================
@@ -470,6 +504,15 @@ class BybitTradingProvider extends ChangeNotifier {
         } else {
           _currentPosition = null;
         }
+      }
+
+      // Update balance from position update (with throttling)
+      final now = DateTime.now();
+      if (_lastBalanceUpdateFromPosition == null ||
+          now.difference(_lastBalanceUpdateFromPosition!) >= _balanceUpdateThrottle) {
+        _lastBalanceUpdateFromPosition = now;
+        fetchBalance();
+        Logger.debug('🔄 포지션 업데이트 → 잔고 실시간 업데이트');
       }
 
       notifyListeners();
@@ -1035,6 +1078,7 @@ class BybitTradingProvider extends ChangeNotifier {
     _disposed = true;
     _marketAnalysisTimer?.cancel();
     _balanceUpdateTimer?.cancel();
+    _realtimeBalanceTimer?.cancel();
     _klineSubscription?.cancel();
     _positionSubscription?.cancel();
 

@@ -3,20 +3,29 @@ import 'package:bybit_scalping_bot/models/price_prediction_signal.dart';
 
 /// 예측 데이터 상세 카드
 ///
-/// 다음 캔들 예측 정보를 시각적으로 표현:
+/// 캔들 예측 정보를 시각적으로 표현:
 /// - 예측 HIGH/LOW/CLOSE
 /// - 상승/하락 여력 (%)
 /// - 시장 상태
 /// - 신뢰도
-/// - avgMove5m 기반 예측
+/// - avgMove 기반 예측
+/// - 이전 예측일 경우 실제 결과와 비교
 class PredictionDetailCard extends StatelessWidget {
   final PricePredictionSignal prediction;
   final double currentPrice;
+  final bool isPrevious; // 이전 예측 여부
+  final double? actualHigh; // 실제 최고가 (이전 예측용)
+  final double? actualLow; // 실제 최저가 (이전 예측용)
+  final double? actualClose; // 실제 종가 (이전 예측용)
 
   const PredictionDetailCard({
     Key? key,
     required this.prediction,
     required this.currentPrice,
+    this.isPrevious = false,
+    this.actualHigh,
+    this.actualLow,
+    this.actualClose,
   }) : super(key: key);
 
   @override
@@ -49,7 +58,7 @@ class PredictionDetailCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
+              color: (isPrevious ? Colors.purple : Colors.blue).withOpacity(0.1),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -57,17 +66,25 @@ class PredictionDetailCard extends StatelessWidget {
             ),
             child: Row(
               children: [
-                const Icon(Icons.insights, color: Colors.blue, size: 24),
+                Icon(
+                  isPrevious ? Icons.history : Icons.insights,
+                  color: isPrevious ? Colors.purple : Colors.blue,
+                  size: 24,
+                ),
                 const SizedBox(width: 8),
-                const Text(
-                  '다음 5분 캔들 예측',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    isPrevious
+                        ? '이전 ${prediction.intervalDisplayName} 캔들 예측 결과'
+                        : '다음 ${prediction.intervalDisplayName} 캔들 예측',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 _buildConfidenceBadge(prediction.confidence),
               ],
             ),
@@ -79,6 +96,15 @@ class PredictionDetailCard extends StatelessWidget {
             child: _buildMarketState(),
           ),
 
+          // 이전 예측일 경우 정확도 표시
+          if (isPrevious && actualHigh != null && actualLow != null && actualClose != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildAccuracySection(),
+            ),
+          if (isPrevious && actualHigh != null && actualLow != null && actualClose != null)
+            const SizedBox(height: 16),
+
           // 가격 예측
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -86,7 +112,8 @@ class PredictionDetailCard extends StatelessWidget {
               children: [
                 _buildPriceRow(
                   label: '예측 최고가',
-                  price: prediction.predictedHigh,
+                  predictedPrice: prediction.predictedHigh,
+                  actualPrice: isPrevious ? actualHigh : null,
                   percent: upPotential,
                   icon: Icons.arrow_upward,
                   color: Colors.green,
@@ -94,7 +121,8 @@ class PredictionDetailCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 _buildPriceRow(
                   label: '예측 종가',
-                  price: prediction.predictedClose,
+                  predictedPrice: prediction.predictedClose,
+                  actualPrice: isPrevious ? actualClose : null,
                   percent: closeChange,
                   icon: closeChange >= 0 ? Icons.trending_up : Icons.trending_down,
                   color: closeChange >= 0 ? Colors.green : Colors.red,
@@ -102,7 +130,8 @@ class PredictionDetailCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 _buildPriceRow(
                   label: '예측 최저가',
-                  price: prediction.predictedLow,
+                  predictedPrice: prediction.predictedLow,
+                  actualPrice: isPrevious ? actualLow : null,
                   percent: -downPotential,
                   icon: Icons.arrow_downward,
                   color: Colors.red,
@@ -240,11 +269,18 @@ class PredictionDetailCard extends StatelessWidget {
   /// 가격 행
   Widget _buildPriceRow({
     required String label,
-    required double price,
+    required double predictedPrice,
+    double? actualPrice,
     required double percent,
     required IconData icon,
     required Color color,
   }) {
+    // 이전 예측이고 실제 가격이 있으면 오차 계산
+    double? error;
+    if (actualPrice != null) {
+      error = ((actualPrice - predictedPrice) / predictedPrice) * 100.0;
+    }
+
     return Row(
       children: [
         Icon(icon, color: color, size: 20),
@@ -261,21 +297,74 @@ class PredictionDetailCard extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Text(
-              '\$${price.toStringAsFixed(2)}',
-              style: TextStyle(
-                color: color,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+            // 예측 가격
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (actualPrice != null)
+                  Text(
+                    '예측: ',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 11,
+                    ),
+                  ),
+                Text(
+                  '\$${predictedPrice.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: actualPrice != null ? 13 : 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
             ),
-            Text(
-              '${percent >= 0 ? '+' : ''}${percent.toStringAsFixed(3)}%',
-              style: TextStyle(
-                color: color.withOpacity(0.7),
-                fontSize: 12,
+            // 실제 가격 (있을 경우)
+            if (actualPrice != null) ...[
+              const SizedBox(height: 2),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '실제: ',
+                    style: TextStyle(
+                      color: Colors.grey[500],
+                      fontSize: 11,
+                    ),
+                  ),
+                  Text(
+                    '\$${actualPrice.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
-            ),
+              const SizedBox(height: 2),
+              // 오차
+              Text(
+                '오차: ${error! >= 0 ? '+' : ''}${error.toStringAsFixed(3)}%',
+                style: TextStyle(
+                  color: error.abs() < 0.1
+                      ? Colors.green
+                      : error.abs() < 0.3
+                          ? Colors.orange
+                          : Colors.red,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ] else
+              // 예측 퍼센트 (다음 예측일 경우)
+              Text(
+                '${percent >= 0 ? '+' : ''}${percent.toStringAsFixed(3)}%',
+                style: TextStyle(
+                  color: color.withOpacity(0.7),
+                  fontSize: 12,
+                ),
+              ),
           ],
         ),
       ],
@@ -402,5 +491,82 @@ class PredictionDetailCard extends StatelessWidget {
 
   String _formatTime(DateTime time) {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
+  }
+
+  /// 정확도 섹션 (이전 예측용)
+  Widget _buildAccuracySection() {
+    if (actualHigh == null || actualLow == null || actualClose == null) {
+      return const SizedBox.shrink();
+    }
+
+    // 예측 범위 내 여부
+    final highAccurate = actualHigh! <= prediction.predictedHigh;
+    final lowAccurate = actualLow! >= prediction.predictedLow;
+    final inRange = highAccurate && lowAccurate;
+
+    // 오차 계산
+    final highError = ((actualHigh! - prediction.predictedHigh) / prediction.predictedHigh) * 100.0;
+    final lowError = ((actualLow! - prediction.predictedLow) / prediction.predictedLow) * 100.0;
+    final closeError = ((actualClose! - prediction.predictedClose) / prediction.predictedClose) * 100.0;
+
+    Color statusColor;
+    IconData statusIcon;
+    String statusText;
+
+    if (inRange) {
+      statusColor = Colors.green;
+      statusIcon = Icons.check_circle;
+      statusText = '예측 성공';
+    } else if (!highAccurate && !lowAccurate) {
+      statusColor = Colors.orange;
+      statusIcon = Icons.warning;
+      statusText = '범위 초과';
+    } else if (!highAccurate) {
+      statusColor = Colors.orange;
+      statusIcon = Icons.arrow_upward;
+      statusText = '최고가 초과';
+    } else {
+      statusColor = Colors.red;
+      statusIcon = Icons.arrow_downward;
+      statusText = '최저가 하회';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: statusColor.withOpacity(0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(statusIcon, color: statusColor, size: 24),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  statusText,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '평균 오차: ${((highError.abs() + lowError.abs() + closeError.abs()) / 3).toStringAsFixed(3)}%',
+                  style: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

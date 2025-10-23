@@ -1,7 +1,6 @@
 import 'package:bybit_scalping_bot/backtesting/backtest_engine.dart';
 import 'package:bybit_scalping_bot/models/price_prediction_signal.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
-import 'dart:math';
 
 /// 가격 범위 예측 서비스 V2
 ///
@@ -51,32 +50,43 @@ class PricePredictionServiceV2 {
   };
 
   /// 가격 예측 신호 생성
+  ///
+  /// [klinesMain]: 예측 대상 인터벌의 캔들 데이터
+  /// [klines5m]: 5분봉 캔들 데이터 (참고용)
+  /// [klines30m]: 30분봉 캔들 데이터 (참고용)
+  /// [interval]: 예측 인터벌 ('1', '5', '30', '60', '240')
   PricePredictionSignal? generatePredictionSignal({
+    required List<KlineData> klinesMain,
     required List<KlineData> klines5m,
     required List<KlineData> klines30m,
+    required String interval,
   }) {
     // 최소 데이터 체크
-    if (klines5m.length < 50 || klines30m.length < 50) {
+    if (klinesMain.length < 50 || klines5m.length < 50 || klines30m.length < 50) {
       return null;
     }
 
-    // 현재 캔들
-    final currentKline = klines5m.first;
+    // 현재 캔들 (예측 대상 인터벌)
+    final currentKline = klinesMain.first;
     final currentPrice = currentKline.close;
+    final predictionStartTime = currentKline.timestamp;
 
-    // 5분봉 지표 계산
+    // 주 인터벌 지표 계산
+    final closePricesMain = klinesMain.take(50).map((k) => k.close).toList();
+    final macdMain = calculateMACDFullSeries(closePricesMain).last;
+
+    // 5분봉 지표 계산 (참고용)
     final closePrices5m = klines5m.take(50).map((k) => k.close).toList();
     final bb5m = calculateBollingerBands(closePrices5m, 20, 2.0);
-    final macd5m = calculateMACDFullSeries(closePrices5m).last;
 
-    // 30분봉 지표 계산
+    // 30분봉 지표 계산 (참고용)
     final closePrices30m = klines30m.take(50).map((k) => k.close).toList();
     final rsi30m = calculateRSI(closePrices30m, 14);
     final bb30m = calculateBollingerBands(closePrices30m, 20, 2.0);
     final macd30m = calculateMACDFullSeries(closePrices30m).last;
 
-    // 최근 5개 캔들의 평균 이동폭 계산
-    final avgMove5m = _calculateAvgMove5m(klines5m.take(5).toList());
+    // 최근 5개 캔들의 평균 이동폭 계산 (주 인터벌 기준)
+    final avgMove = _calculateAvgMove(klinesMain.take(5).toList());
 
     // 시장 상태 감지
     final marketState = _detectMarketState(
@@ -89,13 +99,16 @@ class PricePredictionServiceV2 {
     // 배수 가져오기
     final multipliers = _multipliers[marketState]!;
 
-    // 방향 예측 (종가용)
-    final direction = _predictDirection(macd5m: macd5m, marketState: marketState);
+    // 인터벌별 배수 조정
+    final adjustedMultipliers = _adjustMultipliersForInterval(multipliers, interval);
+
+    // 방향 예측 (종가용) - 주 인터벌 MACD 사용
+    final direction = _predictDirection(macd5m: macdMain, marketState: marketState);
 
     // 가격 예측
-    final predictedHigh = currentPrice + (avgMove5m * multipliers.highMultiplier);
-    final predictedLow = currentPrice - (avgMove5m * multipliers.lowMultiplier);
-    final predictedClose = currentPrice + (avgMove5m * multipliers.closeMultiplier * direction);
+    final predictedHigh = currentPrice + (avgMove * adjustedMultipliers.highMultiplier);
+    final predictedLow = currentPrice - (avgMove * adjustedMultipliers.lowMultiplier);
+    final predictedClose = currentPrice + (avgMove * adjustedMultipliers.closeMultiplier * direction);
     final predictedRange = predictedHigh - predictedLow;
 
     return PricePredictionSignal(
@@ -105,18 +118,59 @@ class PricePredictionServiceV2 {
       predictedLow: predictedLow,
       predictedClose: predictedClose,
       predictedRange: predictedRange,
-      avgMove5m: avgMove5m,
+      avgMove5m: avgMove, // 이름은 유지하되, 실제로는 주 인터벌 기준
       confidence: marketState.baseConfidence,
       timestamp: DateTime.now(),
+      predictionInterval: interval,
+      predictionStartTime: predictionStartTime,
     );
   }
 
   /// 최근 5개 캔들의 평균 이동폭 계산
-  double _calculateAvgMove5m(List<KlineData> recentKlines) {
+  double _calculateAvgMove(List<KlineData> recentKlines) {
     if (recentKlines.length < 5) return 0.0;
 
     final moves = recentKlines.map((k) => k.high - k.low).toList();
     return moves.reduce((a, b) => a + b) / moves.length;
+  }
+
+  /// 인터벌별 배수 조정
+  ///
+  /// 기본 배수는 5분봉 기준이므로, 다른 인터벌에 맞게 조정
+  _PredictionMultipliers _adjustMultipliersForInterval(
+    _PredictionMultipliers baseMultipliers,
+    String interval,
+  ) {
+    // 5분봉 기준이므로 조정 계수 적용
+    double adjustmentFactor;
+
+    switch (interval) {
+      case '1': // 1분봉: 변동폭이 5분봉의 ~20% 수준
+        adjustmentFactor = 0.20;
+        break;
+      case '5': // 5분봉: 기본 (1.0)
+        adjustmentFactor = 1.0;
+        break;
+      case '30': // 30분봉: 변동폭이 5분봉의 ~6배
+        adjustmentFactor = 6.0;
+        break;
+      case '60': // 1시간봉: 변동폭이 5분봉의 ~12배
+        adjustmentFactor = 12.0;
+        break;
+      case '240': // 4시간봉: 변동폭이 5분봉의 ~48배
+        adjustmentFactor = 48.0;
+        break;
+      default:
+        // 비표준 인터벌: 비율 계산
+        final minutes = int.tryParse(interval) ?? 5;
+        adjustmentFactor = minutes / 5.0;
+    }
+
+    return _PredictionMultipliers(
+      highMultiplier: baseMultipliers.highMultiplier * adjustmentFactor,
+      lowMultiplier: baseMultipliers.lowMultiplier * adjustmentFactor,
+      closeMultiplier: baseMultipliers.closeMultiplier * adjustmentFactor,
+    );
   }
 
   /// 방향 예측 (-1: 하락, +1: 상승)

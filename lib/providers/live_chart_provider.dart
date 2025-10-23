@@ -44,6 +44,10 @@ class LiveChartProvider extends ChangeNotifier {
   PricePredictionSignal? _prediction;
   PricePredictionSignal? get prediction => _prediction;
 
+  // 이전 예측 신호 (새 봉으로 넘어갔을 때 이전 예측 유지)
+  PricePredictionSignal? _previousPrediction;
+  PricePredictionSignal? get previousPrediction => _previousPrediction;
+
   // 실시간 예측 범위 (현재 캔들 기반 간단 계산)
   double? _predictedHigh;
   double? _predictedLow;
@@ -55,7 +59,9 @@ class LiveChartProvider extends ChangeNotifier {
 
   // WebSocket 클라이언트
   BybitPublicWebSocketClient? _wsClient;
-  StreamSubscription<Map<String, dynamic>>? _wsSubscription;
+  StreamSubscription<Map<String, dynamic>>? _wsSubscriptionMain;
+  StreamSubscription<Map<String, dynamic>>? _wsSubscription5m;
+  StreamSubscription<Map<String, dynamic>>? _wsSubscription30m;
 
   // 로딩 상태
   bool _isLoading = false;
@@ -137,7 +143,7 @@ class LiveChartProvider extends ChangeNotifier {
     // WebSocket 재연결
     await _reconnectWebSocket();
 
-    // 예측 업데이트
+    // 예측 업데이트 (현재 + 이전 예측 모두 생성)
     _updatePrediction();
     _updateSimplePrediction();
   }
@@ -154,7 +160,7 @@ class LiveChartProvider extends ChangeNotifier {
     // WebSocket 재연결
     await _reconnectWebSocket();
 
-    // 데이터 새로 로드
+    // 데이터 새로 로드 (예측도 함께 생성됨)
     await loadInitialData();
   }
 
@@ -169,8 +175,6 @@ class LiveChartProvider extends ChangeNotifier {
       if (_topCoins.isEmpty) {
         await loadTopCoins();
       }
-
-      final endTime = DateTime.now().toUtc();
 
       // 선택된 인터벌 데이터 로드
       await _loadKlinesForInterval(_selectedInterval);
@@ -196,21 +200,29 @@ class LiveChartProvider extends ChangeNotifier {
     }
   }
 
+  /// interval에서 분 단위 숫자 추출 ("5m" -> 5, "5" -> 5)
+  int _parseIntervalMinutes(String interval) {
+    final cleaned = interval.replaceAll(RegExp(r'[^0-9]'), '');
+    return int.tryParse(cleaned) ?? 5;
+  }
+
   /// 특정 인터벌 데이터 로드
   Future<void> _loadKlinesForInterval(String interval) async {
     final endTime = DateTime.now().toUtc();
-    final intervalMinutes = int.parse(interval);
+    final intervalMinutes = _parseIntervalMinutes(interval);
 
-    // 인터벌에 따라 로드 기간 설정
+    // 인터벌에 따라 로드 기간 설정 (예측을 위해 최소 100개 확보)
     Duration lookback;
     if (intervalMinutes == 1) {
-      lookback = const Duration(hours: 2);
+      lookback = const Duration(hours: 3); // 180개
     } else if (intervalMinutes == 5) {
-      lookback = const Duration(hours: 8);
+      lookback = const Duration(hours: 10); // 120개
     } else if (intervalMinutes == 30) {
-      lookback = const Duration(hours: 24);
+      lookback = const Duration(hours: 60); // 120개 (2.5일)
     } else if (intervalMinutes == 60) {
-      lookback = const Duration(days: 3);
+      lookback = const Duration(days: 5); // 120개
+    } else if (intervalMinutes == 240) {
+      lookback = const Duration(days: 20); // 120개
     } else {
       lookback = const Duration(days: 10);
     }
@@ -225,6 +237,7 @@ class LiveChartProvider extends ChangeNotifier {
     );
 
     _klinesCache[interval] = klines;
+    print('📊 ${interval}분봉 로드 완료: ${klines.length}개');
   }
 
   /// WebSocket 연결
@@ -235,27 +248,55 @@ class LiveChartProvider extends ChangeNotifier {
   /// WebSocket 재연결
   Future<void> _reconnectWebSocket() async {
     // 기존 연결 종료
-    await _wsSubscription?.cancel();
+    await _wsSubscriptionMain?.cancel();
+    await _wsSubscription5m?.cancel();
+    await _wsSubscription30m?.cancel();
     await _wsClient?.disconnect();
 
     // 새 연결 생성
     _wsClient = BybitPublicWebSocketClient();
     await _wsClient!.connect();
 
-    // 현재 인터벌 구독
-    final topic = 'kline.$_selectedInterval.$_symbol';
-    await _wsClient!.subscribe(topic);
+    // 선택된 인터벌 구독
+    final topicMain = 'kline.$_selectedInterval.$_symbol';
+    await _wsClient!.subscribe(topicMain);
 
-    final stream = _wsClient!.getStream(topic);
-    if (stream != null) {
-      _wsSubscription = stream.listen((data) {
-        _handleKlineUpdate(data);
+    final streamMain = _wsClient!.getStream(topicMain);
+    if (streamMain != null) {
+      _wsSubscriptionMain = streamMain.listen((data) {
+        _handleKlineUpdate(data, _selectedInterval);
       });
+    }
+
+    // 5분봉 구독 (예측용, 선택된 인터벌이 아닐 경우)
+    if (_selectedInterval != '5') {
+      final topic5m = 'kline.5.$_symbol';
+      await _wsClient!.subscribe(topic5m);
+
+      final stream5m = _wsClient!.getStream(topic5m);
+      if (stream5m != null) {
+        _wsSubscription5m = stream5m.listen((data) {
+          _handleKlineUpdate(data, '5');
+        });
+      }
+    }
+
+    // 30분봉 구독 (예측용, 선택된 인터벌이 아닐 경우)
+    if (_selectedInterval != '30') {
+      final topic30m = 'kline.30.$_symbol';
+      await _wsClient!.subscribe(topic30m);
+
+      final stream30m = _wsClient!.getStream(topic30m);
+      if (stream30m != null) {
+        _wsSubscription30m = stream30m.listen((data) {
+          _handleKlineUpdate(data, '30');
+        });
+      }
     }
   }
 
   /// WebSocket 캔들 데이터 처리
-  void _handleKlineUpdate(Map<String, dynamic> data) {
+  void _handleKlineUpdate(Map<String, dynamic> data, String interval) {
     try {
       if (data['topic'] == null || !data['topic'].toString().startsWith('kline')) {
         return;
@@ -286,7 +327,7 @@ class LiveChartProvider extends ChangeNotifier {
           volume: volume,
         );
 
-        _onKlineUpdate(newKline);
+        _onKlineUpdate(newKline, interval);
       }
     } catch (e) {
       print('캔들 업데이트 처리 실패: $e');
@@ -294,17 +335,20 @@ class LiveChartProvider extends ChangeNotifier {
   }
 
   /// 캔들 업데이트 콜백
-  void _onKlineUpdate(KlineData newKline) {
-    final klines = _klinesCache[_selectedInterval];
+  void _onKlineUpdate(KlineData newKline, String interval) {
+    final klines = _klinesCache[interval];
     if (klines == null || klines.isEmpty) return;
 
     final lastKline = klines.last;
+    bool isNewCandle = false;
 
     // 같은 시간대면 업데이트, 아니면 추가
     if (lastKline.timestamp == newKline.timestamp) {
       klines[klines.length - 1] = newKline;
     } else {
+      // 새 봉 추가됨
       klines.add(newKline);
+      isNewCandle = true;
 
       // 최대 1000개 유지
       if (klines.length > 1000) {
@@ -312,10 +356,18 @@ class LiveChartProvider extends ChangeNotifier {
       }
     }
 
-    // 실시간 예측 업데이트
-    _updateSimplePrediction();
+    // 선택된 인터벌의 새 봉이면 V2 예측 업데이트
+    if (isNewCandle && interval == _selectedInterval) {
+      // 새 봉이 추가되면 예측 재계산 (현재 + 이전)
+      _updatePrediction();
+      print('🔮 새 봉 감지: 예측 업데이트 (${_selectedInterval}분)');
+    }
 
-    notifyListeners();
+    // 선택된 인터벌이면 실시간 예측도 업데이트
+    if (interval == _selectedInterval) {
+      _updateSimplePrediction();
+      notifyListeners();
+    }
   }
 
   /// 간단한 실시간 예측 계산 (ATR 기반)
@@ -372,21 +424,50 @@ class LiveChartProvider extends ChangeNotifier {
     }
   }
 
-  /// V2 예측 업데이트
+  /// V2 예측 업데이트 (현재 예측 + 이전 예측)
   void _updatePrediction() {
-    if (klines5m.length < 50 || klines30m.length < 50) {
+    final klinesMain = currentKlines;
+
+    print('🔍 예측 업데이트 시작 - 메인: ${klinesMain.length}, 5분: ${klines5m.length}, 30분: ${klines30m.length}');
+
+    if (klinesMain.length < 51 || klines5m.length < 51 || klines30m.length < 51) {
+      print('❌ 데이터 부족: 예측 생성 불가');
       _prediction = null;
+      _previousPrediction = null;
       return;
     }
 
     try {
-      _prediction = _predictionService.generatePredictionSignal(
+      // 현재 예측: 다음 봉 예측 (마지막 봉 포함)
+      final currentPrediction = _predictionService.generatePredictionSignal(
+        klinesMain: klinesMain.reversed.toList(),
         klines5m: klines5m.reversed.toList(),
         klines30m: klines30m.reversed.toList(),
+        interval: _selectedInterval,
       );
+
+      _prediction = currentPrediction;
+      print('✅ 현재 예측 생성 완료');
+
+      // 이전 예측: 마지막 봉 예측 (마지막 봉 제외한 데이터로)
+      // 최소 52개 이상 있어야 이전 예측 가능
+      if (klinesMain.length >= 52 && klines5m.length >= 52 && klines30m.length >= 52) {
+        final previousPrediction = _predictionService.generatePredictionSignal(
+          klinesMain: klinesMain.sublist(0, klinesMain.length - 1).reversed.toList(),
+          klines5m: klines5m.sublist(0, klines5m.length - 1).reversed.toList(),
+          klines30m: klines30m.sublist(0, klines30m.length - 1).reversed.toList(),
+          interval: _selectedInterval,
+        );
+        _previousPrediction = previousPrediction;
+        print('✅ 이전 예측 생성 완료');
+      } else {
+        _previousPrediction = null;
+        print('⚠️ 데이터 부족: 이전 예측 생성 불가 (최소 52개 필요)');
+      }
     } catch (e) {
-      print('예측 생성 실패: $e');
+      print('❌ 예측 생성 실패: $e');
       _prediction = null;
+      _previousPrediction = null;
     }
   }
 
@@ -431,7 +512,7 @@ class LiveChartProvider extends ChangeNotifier {
 
       allKlines.addAll(parsedKlines);
 
-      currentStart = parsedKlines.last.timestamp.add(Duration(minutes: int.parse(interval)));
+      currentStart = parsedKlines.last.timestamp.add(Duration(minutes: _parseIntervalMinutes(interval)));
       await Future.delayed(const Duration(milliseconds: 200));
 
       if (klines.length < 200) break;
@@ -454,7 +535,9 @@ class LiveChartProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    _wsSubscription?.cancel();
+    _wsSubscriptionMain?.cancel();
+    _wsSubscription5m?.cancel();
+    _wsSubscription30m?.cancel();
     _wsClient?.disconnect();
     super.dispose();
   }

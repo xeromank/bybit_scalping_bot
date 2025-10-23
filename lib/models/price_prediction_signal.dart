@@ -27,6 +27,12 @@ class PricePredictionSignal {
   /// 신호 생성 시각
   final DateTime timestamp;
 
+  /// 예측 대상 인터벌 (분 단위: 1, 5, 30, 240 등)
+  final String predictionInterval;
+
+  /// 예측 시작 캔들의 타임스탬프 (새 봉 감지용)
+  final DateTime predictionStartTime;
+
   PricePredictionSignal({
     required this.marketState,
     required this.currentPrice,
@@ -37,6 +43,8 @@ class PricePredictionSignal {
     required this.avgMove5m,
     required this.confidence,
     required this.timestamp,
+    required this.predictionInterval,
+    required this.predictionStartTime,
   });
 
   /// 예측 최고가까지의 상승 여력 (%)
@@ -54,10 +62,29 @@ class PricePredictionSignal {
   double get closeChangePercent =>
       ((predictedClose - currentPrice) / currentPrice) * 100.0;
 
+  /// 인터벌 표시명
+  String get intervalDisplayName {
+    switch (predictionInterval) {
+      case '1':
+        return '1분';
+      case '5':
+        return '5분';
+      case '30':
+        return '30분';
+      case '60':
+        return '1시간';
+      case '240':
+        return '4시간';
+      default:
+        return '${predictionInterval}분';
+    }
+  }
+
   @override
   String toString() {
     return '''
 PricePredictionSignal(
+  인터벌: $intervalDisplayName
   상태: $marketState
   현재가: \$${currentPrice.toStringAsFixed(2)}
   예측 최고가: \$${predictedHigh.toStringAsFixed(2)} (+${upwardPotentialPercent.toStringAsFixed(3)}%)
@@ -66,6 +93,7 @@ PricePredictionSignal(
   예측 범위: \$${predictedRange.toStringAsFixed(2)} (${rangePercent.toStringAsFixed(3)}%)
   avgMove5m: \$${avgMove5m.toStringAsFixed(2)}
   신뢰도: ${(confidence * 100).toStringAsFixed(1)}%
+  예측 시작 시각: $predictionStartTime
 )''';
   }
 }

@@ -39,6 +39,13 @@ class _TradingChartState extends State<TradingChart> {
   late TrackballBehavior _trackballBehavior;
   late ZoomPanBehavior _zoomPanBehavior;
 
+  /// interval에서 분 단위 숫자 추출 ("5m" -> 5, "5" -> 5)
+  int _parseIntervalMinutes(String interval) {
+    // "m" 제거하고 숫자만 파싱
+    final cleaned = interval.replaceAll(RegExp(r'[^0-9]'), '');
+    return int.tryParse(cleaned) ?? 5;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -431,7 +438,7 @@ class _TradingChartState extends State<TradingChart> {
             dataSource: [
               _PredictionZone(
                 time: widget.klines.last.timestamp.add(
-                  Duration(minutes: int.parse(widget.interval)),
+                  Duration(minutes: _parseIntervalMinutes(widget.interval)),
                 ),
                 high: widget.prediction!.predictedHigh,
                 low: widget.prediction!.predictedLow,

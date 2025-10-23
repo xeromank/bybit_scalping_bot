@@ -118,16 +118,70 @@ class _LiveChartScreenState extends State<LiveChartScreen> {
               // 종목 + 인터벌 헤더
               _buildHeader(provider),
 
-              // 실시간 예측 범위 표시
-              if (provider.predictedHigh != null)
-                _buildPredictionBanner(provider),
-
-              // 차트 (스크롤 가능)
+              // 스크롤 가능한 영역
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      // 메인 차트
+                      // 실시간 예측 범위 표시
+                      if (provider.predictedHigh != null)
+                        _buildPredictionBanner(provider),
+
+                      // 이전 캔들 예측 결과 카드 (최상단 배치)
+                      if (provider.previousPrediction != null && provider.currentKlines.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: PredictionDetailCard(
+                            prediction: provider.previousPrediction!,
+                            currentPrice: provider.currentKlines[provider.currentKlines.length - 2].close,
+                            isPrevious: true,
+                            actualHigh: provider.currentKlines.last.high,
+                            actualLow: provider.currentKlines.last.low,
+                            actualClose: provider.currentKlines.last.close,
+                          ),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Card(
+                            color: const Color(0xFF2D2D2D),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Column(
+                                children: [
+                                  const Icon(Icons.info_outline, color: Colors.orange, size: 40),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '이전 예측 데이터 로딩 중...',
+                                    style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '캔들 데이터: ${provider.currentKlines.length}개\n5분봉: ${provider.klines5m.length}개\n30분봉: ${provider.klines30m.length}개',
+                                    style: TextStyle(color: Colors.grey[600], fontSize: 11),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      // 다음 캔들 예측 카드
+                      if (provider.prediction != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                          child: PredictionDetailCard(
+                            prediction: provider.prediction!,
+                            currentPrice: provider.currentKlines.last.close,
+                            isPrevious: false,
+                          ),
+                        ),
+
+                      const SizedBox(height: 12),
+
+                      // 메인 차트 (하단 배치)
                       SizedBox(
                         height: MediaQuery.of(context).size.height * 0.6,
                         child: TradingChart(
@@ -139,13 +193,6 @@ class _LiveChartScreenState extends State<LiveChartScreen> {
                           predictedLow: provider.predictedLow,
                         ),
                       ),
-
-                      // 예측 상세 카드
-                      if (provider.prediction != null)
-                        PredictionDetailCard(
-                          prediction: provider.prediction!,
-                          currentPrice: provider.currentKlines.last.close,
-                        ),
                     ],
                   ),
                 ),

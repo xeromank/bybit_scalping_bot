@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/bybit_trading_provider.dart';
-import 'package:bybit_scalping_bot/models/wallet_balance.dart';
 
 /// Balance Card Widget
 ///
@@ -91,6 +90,38 @@ class BalanceCard extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    // 실시간 업데이트 인디케이터
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: Colors.green.withOpacity(0.5), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text(
+                            'LIVE',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                     const Spacer(),
                     IconButton(
                       icon: provider.isLoadingBalance
@@ -104,7 +135,7 @@ class BalanceCard extends StatelessWidget {
                             )
                           : const Icon(Icons.refresh, color: Colors.blue, size: 20),
                       onPressed: provider.isLoadingBalance ? null : () => provider.fetchBalance(),
-                      tooltip: '새로고침',
+                      tooltip: '수동 새로고침',
                     ),
                   ],
                 ),
@@ -237,16 +268,30 @@ class BalanceCard extends StatelessWidget {
                   ),
                 ),
 
-                // 마지막 업데이트 시간
+                // 마지막 업데이트 시간 및 주기
                 if (provider.lastBalanceUpdate != null) ...[
                   const SizedBox(height: 12),
                   Center(
-                    child: Text(
-                      '마지막 업데이트: ${_formatTime(provider.lastBalanceUpdate!)}',
-                      style: TextStyle(
-                        color: Colors.grey[500],
-                        fontSize: 11,
-                      ),
+                    child: Column(
+                      children: [
+                        Text(
+                          '마지막 업데이트: ${_formatTime(provider.lastBalanceUpdate!)}',
+                          style: TextStyle(
+                            color: Colors.grey[500],
+                            fontSize: 11,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          positionIM > 0
+                              ? '⚡ 실시간 업데이트 (2초마다)'
+                              : '🕐 자동 업데이트 (10초마다)',
+                          style: TextStyle(
+                            color: positionIM > 0 ? Colors.green[300] : Colors.grey[600],
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
