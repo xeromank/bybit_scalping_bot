@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:bybit_scalping_bot/providers/hyperliquid_provider.dart';
+import 'package:bybit_scalping_bot/services/hyperdash_webview_client.dart';
+import 'package:bybit_scalping_bot/models/hyperdash_trader.dart';
 
 /// Hyperliquid 트레이더 추가 화면
 class HyperliquidTraderAddScreen extends StatefulWidget {
@@ -19,11 +21,80 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
   bool _isLoading = false;
   String? _errorMessage;
 
+  // Top Traders 데이터
+  List<HyperdashTrader> _topTraders = [];
+  bool _isLoadingTraders = false;
+  final _hyperdashClient = HyperdashWebViewClient();
+
+  // 정렬 옵션
+  String _sortBy = 'rank'; // rank, account_value, week_pnl, month_pnl, alltime_pnl
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTopTraders();
+  }
+
   @override
   void dispose() {
     _addressController.dispose();
     _nicknameController.dispose();
+    _hyperdashClient.dispose();
     super.dispose();
+  }
+
+  /// Top Traders 로드
+  Future<void> _loadTopTraders() async {
+    setState(() {
+      _isLoadingTraders = true;
+    });
+
+    try {
+      final traders = await _hyperdashClient.fetchTopTraders();
+      if (mounted) {
+        setState(() {
+          _topTraders = traders;
+          _isLoadingTraders = false;
+          _sortTraders(); // 정렬 적용
+        });
+      }
+    } catch (e) {
+      print('Top Traders 로드 실패: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingTraders = false;
+        });
+      }
+    }
+  }
+
+  /// 트레이더 정렬
+  void _sortTraders() {
+    switch (_sortBy) {
+      case 'rank':
+        // 원본 순서 유지 (API에서 받은 순서 = 랭킹)
+        break;
+      case 'account_value':
+        _topTraders.sort((a, b) => b.accountValue.compareTo(a.accountValue));
+        break;
+      case 'week_pnl':
+        _topTraders.sort((a, b) => b.perpWeekPnl.compareTo(a.perpWeekPnl));
+        break;
+      case 'month_pnl':
+        _topTraders.sort((a, b) => b.perpMonthPnl.compareTo(a.perpMonthPnl));
+        break;
+      case 'alltime_pnl':
+        _topTraders.sort((a, b) => b.perpAlltimePnl.compareTo(a.perpAlltimePnl));
+        break;
+    }
+  }
+
+  /// 정렬 변경
+  void _changeSortBy(String newSortBy) {
+    setState(() {
+      _sortBy = newSortBy;
+      _sortTraders();
+    });
   }
 
   @override
@@ -218,6 +289,126 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
                 ),
               ),
             ),
+
+            const SizedBox(height: 32),
+
+            // 구분선
+            Row(
+              children: [
+                Expanded(child: Divider(color: Colors.grey[700])),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '또는',
+                    style: TextStyle(color: Colors.grey[500], fontSize: 14),
+                  ),
+                ),
+                Expanded(child: Divider(color: Colors.grey[700])),
+              ],
+            ),
+
+            const SizedBox(height: 16),
+
+            // Top Traders 섹션 헤더
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.leaderboard, color: Colors.amber[700], size: 24),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Top 1000 Traders',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                if (_isLoadingTraders)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  TextButton.icon(
+                    onPressed: _loadTopTraders,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('새로고침'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.blue,
+                    ),
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // 정렬 옵션
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2D2D2D),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey[700]!),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.sort, color: Colors.grey[400], size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    '정렬:',
+                    style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _sortBy,
+                        dropdownColor: const Color(0xFF2D2D2D),
+                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        icon: Icon(Icons.arrow_drop_down, color: Colors.grey[400]),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'rank',
+                            child: Text('기본 랭킹'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'account_value',
+                            child: Text('계좌 금액'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'week_pnl',
+                            child: Text('주간 수익'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'month_pnl',
+                            child: Text('월간 수익'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'alltime_pnl',
+                            child: Text('전체 수익'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            _changeSortBy(value);
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Top Traders 리스트
+            _buildTopTradersList(),
           ],
         ),
       ),
@@ -229,6 +420,211 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
     if (data != null && data.text != null) {
       _addressController.text = data.text!.trim();
     }
+  }
+
+  /// Top Traders 리스트 위젯
+  Widget _buildTopTradersList() {
+    if (_isLoadingTraders) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (_topTraders.isEmpty) {
+      return Card(
+        color: const Color(0xFF2D2D2D),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Icon(Icons.info_outline, color: Colors.grey[400], size: 48),
+              const SizedBox(height: 12),
+              Text(
+                '트레이더 목록을 불러올 수 없습니다',
+                style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _loadTopTraders,
+                child: const Text('다시 시도'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: 400,
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D2D2D),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[700]!),
+      ),
+      child: ListView.separated(
+        padding: const EdgeInsets.all(8),
+        itemCount: _topTraders.length,
+        separatorBuilder: (context, index) => Divider(
+          color: Colors.grey[800],
+          height: 1,
+        ),
+        itemBuilder: (context, index) {
+          final trader = _topTraders[index];
+          return _buildTraderTile(trader, index + 1);
+        },
+      ),
+    );
+  }
+
+  /// 트레이더 타일 위젯
+  Widget _buildTraderTile(HyperdashTrader trader, int rank) {
+    final isProfitable = trader.isMonthPnlPositive;
+
+    return InkWell(
+      onTap: () => _selectTrader(trader),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          children: [
+            // 순위
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: rank <= 3
+                    ? Colors.amber.withValues(alpha: 0.2)
+                    : Colors.grey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: rank <= 3 ? Colors.amber : Colors.grey[700]!,
+                ),
+              ),
+              child: Center(
+                child: Text(
+                  '#$rank',
+                  style: TextStyle(
+                    color: rank <= 3 ? Colors.amber : Colors.grey[400],
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // 트레이더 정보
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 주소
+                  Text(
+                    trader.shortAddress,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+
+                  // 계좌 금액 & 포지션
+                  Row(
+                    children: [
+                      Text(
+                        trader.formattedAccountValue,
+                        style: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: 12,
+                        ),
+                      ),
+                      if (trader.mainPosition != null && trader.mainPosition!.hasPosition) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: trader.mainPosition!.side == 'LONG'
+                                ? Colors.green.withValues(alpha: 0.2)
+                                : Colors.red.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            trader.mainPositionDescription,
+                            style: TextStyle(
+                              color: trader.mainPosition!.side == 'LONG'
+                                  ? Colors.green
+                                  : Colors.red,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // PnL
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  trader.formattedMonthPnl,
+                  style: TextStyle(
+                    color: isProfitable ? Colors.green : Colors.red,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '월간',
+                  style: TextStyle(
+                    color: Colors.grey[500],
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(width: 8),
+
+            // 선택 아이콘
+            Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.grey[600],
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 트레이더 선택
+  void _selectTrader(HyperdashTrader trader) {
+    setState(() {
+      _addressController.text = trader.address;
+      _nicknameController.text = ''; // 사용자가 직접 입력하도록
+    });
+
+    // 화면 상단으로 스크롤 (주소 입력란이 보이도록)
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${trader.shortAddress} 선택됨 - 닉네임을 입력하고 추가 버튼을 눌러주세요'),
+        backgroundColor: Colors.blue,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _addTrader() async {

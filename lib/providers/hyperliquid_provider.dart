@@ -85,8 +85,12 @@ class HyperliquidProvider extends ChangeNotifier {
         return false;
       }
 
-      // 계정 상태 조회
-      await refreshTraderState(trader.address);
+      // 계정 상태 조회 (백그라운드에서 비동기로 실행)
+      // 즉시 추가하고, 상태는 나중에 로드
+      // await refreshTraderState(trader.address);
+      refreshTraderState(trader.address).catchError((e) {
+        Logger.warning('트레이더 상태 조회 실패 (백그라운드): $e');
+      });
 
       // 목록 재로드
       await loadTraders();

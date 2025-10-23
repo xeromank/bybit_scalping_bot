@@ -56,15 +56,22 @@ class HyperliquidApiClient {
   /// 여러 트레이더의 계정 상태 일괄 조회
   ///
   /// [addresses]: 트레이더 주소 목록
+  /// 각 조회 사이에 0.5초 딜레이 적용 (API 부하 방지)
   Future<Map<String, HyperliquidAccountState>> getMultipleAccountStates(
     List<String> addresses,
   ) async {
     final results = <String, HyperliquidAccountState>{};
 
-    for (final address in addresses) {
+    for (int i = 0; i < addresses.length; i++) {
+      final address = addresses[i];
       try {
         final state = await getAccountState(address);
         results[address] = state;
+
+        // 마지막 트레이더가 아니면 0.5초 대기
+        if (i < addresses.length - 1) {
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
       } catch (e) {
         Logger.error('트레이더 $address 조회 실패: $e');
         // 실패해도 계속 진행
