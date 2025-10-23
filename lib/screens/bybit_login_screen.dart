@@ -6,6 +6,8 @@ import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/models/exchange_credentials.dart';
 import 'package:bybit_scalping_bot/screens/bybit_trading_screen.dart';
 import 'package:bybit_scalping_bot/screens/coinone_trading_screen.dart';
+import 'package:bybit_scalping_bot/screens/hyperliquid_traders_screen.dart';
+import 'package:bybit_scalping_bot/screens/guest_home_screen.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Universal Login Screen
@@ -300,9 +302,9 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -332,7 +334,7 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                           )
                         else
                           DropdownButtonFormField<ExchangeCredentials>(
-                            value: _selectedCredential,
+                            initialValue: _selectedCredential,
                             dropdownColor: const Color(0xFF2D2D2D),
                             decoration: InputDecoration(
                               filled: true,
@@ -487,15 +489,77 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                             ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // 게스트 모드 버튼 (메인)
+                  SizedBox(
+                    height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const GuestHomeScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.remove_red_eye, color: Colors.green, size: 24),
+                      label: const Text(
+                        '게스트 모드로 둘러보기',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.green, width: 2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Hyperliquid 트레이더 추적 버튼
+                  SizedBox(
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const HyperliquidTradersScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.track_changes, color: Colors.blue),
+                      label: const Text(
+                        'Hyperliquid 트레이더 추적',
+                        style: TextStyle(
+                          color: Colors.blue,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.blue, width: 1.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
                   // Info Box
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: (_selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange).withOpacity(0.1),
+                      color: (_selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: (_selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange).withOpacity(0.3)),
+                      border: Border.all(color: (_selectedExchange == ExchangeType.bybit ? Colors.blue : Colors.orange).withValues(alpha: 0.3)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

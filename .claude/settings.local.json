@@ -23,7 +23,10 @@
       "Bash(dart run:*)",
       "Bash(cat:*)",
       "Bash(flutter pub get:*)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "WebFetch(domain:hyperdash.info)",
+      "Bash(curl:*)",
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

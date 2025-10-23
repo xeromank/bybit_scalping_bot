@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:bybit_scalping_bot/services/bybit_api_client.dart';
 import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
@@ -25,7 +26,11 @@ import 'package:bybit_scalping_bot/core/enums/exchange_type.dart';
 
 // Live Chart imports
 import 'package:bybit_scalping_bot/providers/live_chart_provider.dart';
-import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
+
+// Hyperliquid imports
+import 'package:bybit_scalping_bot/providers/hyperliquid_provider.dart';
+import 'package:bybit_scalping_bot/repositories/hyperliquid_trader_repository.dart';
+import 'package:bybit_scalping_bot/services/hyperliquid/hyperliquid_api_client.dart';
 
 /// Main entry point for the refactored application
 ///
@@ -40,12 +45,19 @@ import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
 ///
 /// Dependencies flow from top to bottom, but abstractions
 /// flow from bottom to top (Dependency Inversion Principle).
-void main() {
-  runApp(const MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+
+  runApp(MyApp(prefs: prefs));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final SharedPreferences prefs;
+
+  const MyApp({super.key, required this.prefs});
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +67,10 @@ class MyApp extends StatelessWidget {
       storageService: secureStorageService,
     );
 
+    // Hyperliquid services
+    final hyperliquidApiClient = HyperliquidApiClient();
+    final hyperliquidTraderRepository = HyperliquidTraderRepository(prefs);
+
     // Shared WebSocket clients (created once per authentication session)
     BybitPublicWebSocketClient? sharedPublicWsClient;
     BybitWebSocketClient? sharedPrivateWsClient;
@@ -62,6 +78,14 @@ class MyApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        // Hyperliquid Provider (트레이더 추적 - 인증 불필요)
+        ChangeNotifierProvider(
+          create: (context) => HyperliquidProvider(
+            repository: hyperliquidTraderRepository,
+            apiClient: hyperliquidApiClient,
+          ),
+        ),
+
         // Live Chart Provider (실시간 차트 - 인증 불필요)
         ChangeNotifierProvider(
           create: (context) => LiveChartProvider(),

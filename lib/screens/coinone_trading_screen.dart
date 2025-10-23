@@ -6,6 +6,7 @@ import 'package:bybit_scalping_bot/providers/coinone_trading_provider.dart';
 import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
 import 'package:bybit_scalping_bot/screens/coinone_withdrawal_screen.dart';
 import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
+import 'package:bybit_scalping_bot/screens/hyperliquid_traders_screen.dart';
 import 'package:bybit_scalping_bot/constants/theme_constants.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_balance.dart';
 import 'package:bybit_scalping_bot/models/coinone/coinone_ticker.dart';
@@ -358,6 +359,18 @@ class _CoinoneTradingScreenState extends State<CoinoneTradingScreen>
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => const LiveChartScreen(),
+                ),
+              );
+            },
+          ),
+          // Hyperliquid Traders button
+          IconButton(
+            icon: const Icon(Icons.track_changes, color: Colors.blue),
+            tooltip: 'Hyperliquid 트레이더 추적',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const HyperliquidTradersScreen(),
                 ),
               );
             },

@@ -13,6 +13,7 @@ import 'package:bybit_scalping_bot/widgets/bybit/technical_indicators_card.dart'
 import 'package:bybit_scalping_bot/widgets/bybit/trade_logs_card.dart';
 import 'package:bybit_scalping_bot/screens/bybit_login_screen.dart';
 import 'package:bybit_scalping_bot/screens/live_chart_screen.dart';
+import 'package:bybit_scalping_bot/screens/hyperliquid_traders_screen.dart';
 
 /// Bybit Trading Screen (New Adaptive Strategy System)
 ///
@@ -72,6 +73,17 @@ class _BybitTradingScreenState extends State<BybitTradingScreen>
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (context) => const LiveChartScreen(),
+                ),
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.track_changes, color: Colors.blue),
+            tooltip: 'Hyperliquid 트레이더 추적',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const HyperliquidTradersScreen(),
                 ),
               );
             },
