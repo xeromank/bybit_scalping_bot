@@ -26,7 +26,11 @@
       "Bash(awk:*)",
       "WebFetch(domain:hyperdash.info)",
       "Bash(curl:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Read(//private/tmp/**)",
+      "Bash(r)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter run:*)"
     ],
     "deny": [],
     "ask": []

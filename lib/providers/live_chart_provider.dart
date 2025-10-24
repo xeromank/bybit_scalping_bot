@@ -28,6 +28,7 @@ class LiveChartProvider extends ChangeNotifier {
   static const Map<String, String> intervalOptions = {
     '1': '1분',
     '5': '5분',
+    '15': '15분',
     '30': '30분',
     '60': '1시간',
     '240': '4시간',
@@ -217,6 +218,8 @@ class LiveChartProvider extends ChangeNotifier {
       lookback = const Duration(hours: 3); // 180개
     } else if (intervalMinutes == 5) {
       lookback = const Duration(hours: 10); // 120개
+    } else if (intervalMinutes == 15) {
+      lookback = const Duration(hours: 30); // 120개
     } else if (intervalMinutes == 30) {
       lookback = const Duration(hours: 60); // 120개 (2.5일)
     } else if (intervalMinutes == 60) {

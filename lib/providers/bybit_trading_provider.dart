@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:bybit_scalping_bot/models/position.dart';
 import 'package:bybit_scalping_bot/models/order.dart';
 import 'package:bybit_scalping_bot/models/top_coin.dart';
@@ -11,9 +13,12 @@ import 'package:bybit_scalping_bot/services/adaptive_strategy.dart';
 import 'package:bybit_scalping_bot/services/bybit_public_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/bybit_websocket_client.dart';
 import 'package:bybit_scalping_bot/services/bybit/bybit_database_service.dart';
+import 'package:bybit_scalping_bot/services/notification_service.dart';
+import 'package:bybit_scalping_bot/services/multi_timeframe_bb_alert_service.dart';
 import 'package:bybit_scalping_bot/core/result/result.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 import 'package:bybit_scalping_bot/utils/technical_indicators.dart';
+import 'package:bybit_scalping_bot/backtesting/backtest_engine.dart';
 
 /// Bybit Trading Provider (New Adaptive Strategy System)
 ///
@@ -27,6 +32,8 @@ class BybitTradingProvider extends ChangeNotifier {
   final BybitPublicWebSocketClient? _publicWsClient;
   final BybitWebSocketClient? _privateWsClient;
   final BybitDatabaseService _databaseService = BybitDatabaseService();
+  final NotificationService _notificationService = NotificationService();
+  final MultiTimeframeBBAlertService _bbAlertService = MultiTimeframeBBAlertService();
 
   // Trade logs (for UI display)
   List<Map<String, dynamic>> _tradeLogs = [];
@@ -37,6 +44,10 @@ class BybitTradingProvider extends ChangeNotifier {
   String _selectedSymbol = 'BTCUSDT';
   double _investmentAmount = 100.0; // USDT
   String _leverage = '10';
+
+  // Alert settings (On/Off toggle)
+  bool _bbAlertEnabled = true;  // BB 알림 활성화
+  bool _rsiAlertEnabled = true; // RSI 알림 활성화
 
   // ============================================================================
   // STATE
@@ -88,6 +99,7 @@ class BybitTradingProvider extends ChangeNotifier {
   Timer? _marketAnalysisTimer; // Every 5 minutes
   Timer? _balanceUpdateTimer; // Every 3 seconds (when bot running)
   Timer? _realtimeBalanceTimer; // Every 5 seconds (always running)
+  Timer? _bbAlertCheckTimer; // Every 30 seconds (for BB alerts)
 
   // Signal check throttling (실시간 체크, 하지만 최소 1초 간격)
   DateTime? _lastSignalCheck;
@@ -96,6 +108,23 @@ class BybitTradingProvider extends ChangeNotifier {
   // Balance update throttling (from position updates)
   DateTime? _lastBalanceUpdateFromPosition;
   static const _balanceUpdateThrottle = Duration(seconds: 2);
+
+  // BB Alert throttling (중복 알림 방지: 1분마다만 알림)
+  DateTime? _lastBBAlert;
+  static const _bbAlertThrottle = Duration(minutes: 1);
+
+  // RSI Alert throttling (중복 알림 방지: 1분마다만 알림)
+  DateTime? _lastRSIAlert;
+  static const _rsiAlertThrottle = Duration(minutes: 1);
+
+  // Multi-timeframe kline data for BB/RSI alerts
+  final Map<String, List<KlineData>> _multiTimeframeKlines = {
+    '5': [],
+    '15': [],
+    '30': [],
+    '60': [],
+    '240': [],
+  };
 
   // Disposed flag
   bool _disposed = false;
@@ -120,6 +149,10 @@ class BybitTradingProvider extends ChangeNotifier {
   String get selectedSymbol => _selectedSymbol;
   double get investmentAmount => _investmentAmount;
   String get leverage => _leverage;
+
+  // Alert settings
+  bool get bbAlertEnabled => _bbAlertEnabled;
+  bool get rsiAlertEnabled => _rsiAlertEnabled;
 
   // State
   bool get isRunning => _isRunning;
@@ -980,10 +1013,25 @@ class BybitTradingProvider extends ChangeNotifier {
       }
     });
 
+    // Load multi-timeframe klines for BB alerts
+    await _loadMultiTimeframeKlines();
+
+    // Start BB/RSI alert check timer (every 30 seconds)
+    _bbAlertCheckTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!_disposed) {
+        _checkBBAlerts();
+        _checkRSIAlerts();
+        // Refresh kline data every 5 minutes
+        if (DateTime.now().minute % 5 == 0) {
+          _loadMultiTimeframeKlines();
+        }
+      }
+    });
+
     // 초기 신호 체크 실행
     _checkTradingSignal();
 
-    Logger.success('BybitTradingProvider: Bot started! (실시간 신호 체크 활성화)');
+    Logger.success('BybitTradingProvider: Bot started! (실시간 신호 체크 + BB/RSI 알림 활성화)');
     notifyListeners();
   }
 
@@ -999,6 +1047,9 @@ class BybitTradingProvider extends ChangeNotifier {
 
     _balanceUpdateTimer?.cancel();
     _balanceUpdateTimer = null;
+
+    _bbAlertCheckTimer?.cancel();
+    _bbAlertCheckTimer = null;
 
     _lastSignalCheck = null;
 
@@ -1024,6 +1075,20 @@ class BybitTradingProvider extends ChangeNotifier {
       _leverage = leverage;
       notifyListeners();
     }
+  }
+
+  /// Toggle BB alert on/off
+  void toggleBBAlert() {
+    _bbAlertEnabled = !_bbAlertEnabled;
+    Logger.info('BB 알림: ${_bbAlertEnabled ? "활성화" : "비활성화"}');
+    notifyListeners();
+  }
+
+  /// Toggle RSI alert on/off
+  void toggleRSIAlert() {
+    _rsiAlertEnabled = !_rsiAlertEnabled;
+    Logger.info('RSI 알림: ${_rsiAlertEnabled ? "활성화" : "비활성화"}');
+    notifyListeners();
   }
 
   // ============================================================================
@@ -1073,12 +1138,198 @@ class BybitTradingProvider extends ChangeNotifier {
   // ============================================================================
   // DISPOSE
   // ============================================================================
+  // ============================================================================
+  // MULTI-TIMEFRAME BB ALERT
+  // ============================================================================
+
+  /// Load multi-timeframe kline data for BB alerts
+  Future<void> _loadMultiTimeframeKlines() async {
+    try {
+      Logger.debug('🔄 Loading multi-timeframe klines for BB alerts...');
+
+      final intervals = ['5', '15', '30', '60', '240'];
+      for (final interval in intervals) {
+        // Fetch klines directly from Bybit API
+        try {
+          final endTime = DateTime.now().toUtc();
+          final startTime = endTime.subtract(const Duration(hours: 24)); // Last 24 hours
+
+          final url = Uri.parse(
+            'https://api.bybit.com/v5/market/kline?'
+            'category=linear&'
+            'symbol=$_selectedSymbol&'
+            'interval=$interval&'
+            'start=${startTime.millisecondsSinceEpoch}&'
+            'end=${endTime.millisecondsSinceEpoch}&'
+            'limit=50',
+          );
+
+          final response = await http.get(url);
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body);
+            if (data['retCode'] == 0) {
+              final klinesList = data['result']['list'] as List<dynamic>;
+              final klines = klinesList
+                  .map((k) => KlineData.fromBybitKline(k))
+                  .toList()
+                  .reversed
+                  .toList();
+
+              _multiTimeframeKlines[interval] = klines;
+              Logger.debug('✅ Loaded ${klines.length} ${interval}m klines');
+            }
+          }
+        } catch (e) {
+          Logger.error('❌ Failed to load ${interval}m klines: $e');
+        }
+      }
+    } catch (e) {
+      Logger.error('Error loading multi-timeframe klines: $e');
+    }
+  }
+
+  /// Check for multi-timeframe BB alerts
+  Future<void> _checkBBAlerts() async {
+    if (!_isRunning || _currentPrice == null || !_bbAlertEnabled) return;
+
+    // Throttle: 5분마다만 알림
+    final now = DateTime.now();
+    if (_lastBBAlert != null &&
+        now.difference(_lastBBAlert!) < _bbAlertThrottle) {
+      return;
+    }
+
+    try {
+      // Check if we have enough data
+      final hasEnoughData = _multiTimeframeKlines.values.every((klines) => klines.length >= 20);
+      if (!hasEnoughData) {
+        Logger.debug('⚠️ Not enough multi-timeframe data for BB alert check');
+        return;
+      }
+
+      // Check BB alert
+      final alertResult = _bbAlertService.checkBBAlert(
+        klines5m: _multiTimeframeKlines['5']!,
+        klines15m: _multiTimeframeKlines['15']!,
+        klines30m: _multiTimeframeKlines['30']!,
+        klines1h: _multiTimeframeKlines['60']!,
+        klines4h: _multiTimeframeKlines['240']!,
+        currentPrice: _currentPrice!,
+      );
+
+      if (alertResult != null) {
+        _lastBBAlert = now;
+
+        Logger.warning('🔔 ${alertResult.alertMessage}');
+
+        // Send notification
+        await _notificationService.showTradeNotification(
+          title: alertResult.type == BBAlertType.overbought
+              ? '📈 과매수 알림 (숏 기회)'
+              : '📉 과매도 알림 (롱 기회)',
+          body: alertResult.alertMessage,
+          payload: 'bb_alert_${alertResult.type.name}',
+        );
+
+        // Log to trade logs
+        await _logTrade(
+          'BB_ALERT',
+          alertResult.logMessage,
+        );
+      }
+    } catch (e) {
+      Logger.error('Error checking BB alerts: $e');
+    }
+  }
+
+  /// Check for multi-timeframe RSI alerts (both oversold and overbought)
+  Future<void> _checkRSIAlerts() async {
+    if (!_isRunning || _currentPrice == null || !_rsiAlertEnabled) return;
+
+    // Throttle: 1분마다만 알림
+    final now = DateTime.now();
+    if (_lastRSIAlert != null &&
+        now.difference(_lastRSIAlert!) < _rsiAlertThrottle) {
+      return;
+    }
+
+    try {
+      // Check if we have enough data
+      final has5m = _multiTimeframeKlines['5']!.length >= 15;
+      final has15m = _multiTimeframeKlines['15']!.length >= 15;
+      final has30m = _multiTimeframeKlines['30']!.length >= 15;
+
+      if (!has5m || !has15m || !has30m) {
+        Logger.debug('⚠️ Not enough multi-timeframe data for RSI alert check');
+        return;
+      }
+
+      // Check RSI oversold alert (롱 기회)
+      final oversoldResult = _bbAlertService.checkRSIOversold(
+        klines5m: _multiTimeframeKlines['5']!,
+        klines15m: _multiTimeframeKlines['15']!,
+        klines30m: _multiTimeframeKlines['30']!,
+        currentPrice: _currentPrice!,
+      );
+
+      if (oversoldResult != null) {
+        _lastRSIAlert = now;
+
+        Logger.warning('🔔 ${oversoldResult.alertMessage}');
+
+        // Send notification
+        await _notificationService.showTradeNotification(
+          title: '📉 RSI 과매도 알림 (롱 기회)',
+          body: oversoldResult.alertMessage,
+          payload: 'rsi_alert_oversold',
+        );
+
+        // Log to trade logs
+        await _logTrade(
+          'RSI_ALERT',
+          oversoldResult.logMessage,
+        );
+        return; // 하나의 알림만 발송
+      }
+
+      // Check RSI overbought alert (숏 기회)
+      final overboughtResult = _bbAlertService.checkRSIOverbought(
+        klines5m: _multiTimeframeKlines['5']!,
+        klines15m: _multiTimeframeKlines['15']!,
+        klines30m: _multiTimeframeKlines['30']!,
+        currentPrice: _currentPrice!,
+      );
+
+      if (overboughtResult != null) {
+        _lastRSIAlert = now;
+
+        Logger.warning('🔔 ${overboughtResult.alertMessage}');
+
+        // Send notification
+        await _notificationService.showTradeNotification(
+          title: '📈 RSI 과매수 알림 (숏 기회)',
+          body: overboughtResult.alertMessage,
+          payload: 'rsi_alert_overbought',
+        );
+
+        // Log to trade logs
+        await _logTrade(
+          'RSI_ALERT',
+          overboughtResult.logMessage,
+        );
+      }
+    } catch (e) {
+      Logger.error('Error checking RSI alerts: $e');
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _marketAnalysisTimer?.cancel();
     _balanceUpdateTimer?.cancel();
     _realtimeBalanceTimer?.cancel();
+    _bbAlertCheckTimer?.cancel();
     _klineSubscription?.cancel();
     _positionSubscription?.cancel();
 

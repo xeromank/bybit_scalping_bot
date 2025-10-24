@@ -65,6 +65,9 @@ dependencies:
   vibration: ^1.8.4
   audioplayers: ^6.0.0
 
+  # Local push notifications
+  flutter_local_notifications: ^17.0.0
+
   # Local database for storing logs and order history
   sqflite: ^2.3.0
   path_provider: ^2.1.1
@@ -78,6 +81,9 @@ dependencies:
 
   # Professional charts for trading
   syncfusion_flutter_charts: ^27.1.48
+
+  # WebView for Cloudflare bypass
+  flutter_inappwebview: ^6.0.0
 
 dev_dependencies:
   flutter_test:

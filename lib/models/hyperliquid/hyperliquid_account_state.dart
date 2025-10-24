@@ -135,7 +135,7 @@ class Position {
       positionValue: json['positionValue'] as String,
       unrealizedPnl: json['unrealizedPnl'] as String,
       returnOnEquity: json['returnOnEquity'] as String,
-      liquidationPx: json['liquidationPx'] as String,
+      liquidationPx: json['liquidationPx'] == null ? "0" : json['liquidationPx'] as String,
       marginUsed: json['marginUsed'] as String,
       maxLeverage: json['maxLeverage'] as int,
       cumFunding: CumFunding.fromJson(json['cumFunding'] as Map<String, dynamic>),

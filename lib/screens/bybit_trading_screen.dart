@@ -6,6 +6,7 @@ import 'package:bybit_scalping_bot/widgets/bybit/balance_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/market_condition_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/top_coins_selector.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/strategy_info_card.dart';
+import 'package:bybit_scalping_bot/widgets/bybit/alert_settings_card.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/trading_controls.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/positions_list.dart';
 import 'package:bybit_scalping_bot/widgets/bybit/real_time_price_card.dart';
@@ -259,6 +260,10 @@ class _BybitTradingScreenState extends State<BybitTradingScreen>
 
                 // Strategy Info Card
                 const StrategyInfoCard(),
+                const SizedBox(height: 16),
+
+                // Alert Settings Card
+                const AlertSettingsCard(),
                 const SizedBox(height: 16),
 
                 // Trading Controls

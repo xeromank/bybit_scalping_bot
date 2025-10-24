@@ -9,6 +9,7 @@ import 'package:bybit_scalping_bot/screens/coinone_trading_screen.dart';
 import 'package:bybit_scalping_bot/screens/hyperliquid_traders_screen.dart';
 import 'package:bybit_scalping_bot/screens/guest_home_screen.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
+import 'package:bybit_scalping_bot/services/notification_service.dart';
 
 /// Universal Login Screen
 ///
@@ -39,7 +40,30 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
     // Load credentials after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadSavedCredentials();
+      _initializeNotifications();
     });
+  }
+
+  /// 알림 서비스 초기화
+  Future<void> _initializeNotifications() async {
+    final notificationService = NotificationService();
+    await notificationService.initialize();
+    await notificationService.requestPermissions();
+  }
+
+  /// 알림 테스트 버튼 핸들러
+  Future<void> _testNotification() async {
+    final notificationService = NotificationService();
+    await notificationService.showTestNotification();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('테스트 알림이 전송되었습니다!'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -490,6 +514,29 @@ class _BybitLoginScreenState extends State<BybitLoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+
+                  // 알림 테스트 버튼
+                  SizedBox(
+                    height: 48,
+                    child: OutlinedButton.icon(
+                      onPressed: _testNotification,
+                      icon: const Icon(Icons.notifications_active, color: Colors.orange),
+                      label: const Text(
+                        '알림 테스트',
+                        style: TextStyle(
+                          color: Colors.orange,
+                          fontSize: 14,
+                        ),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.orange),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
 
                   // 게스트 모드 버튼 (메인)
                   SizedBox(
