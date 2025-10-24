@@ -4,6 +4,9 @@ import 'package:bybit_scalping_bot/models/hyperliquid/hyperliquid_trader.dart';
 import 'package:bybit_scalping_bot/models/hyperliquid/hyperliquid_account_state.dart';
 import 'package:bybit_scalping_bot/repositories/hyperliquid_trader_repository.dart';
 import 'package:bybit_scalping_bot/services/hyperliquid/hyperliquid_api_client.dart';
+import 'package:bybit_scalping_bot/services/hyperliquid/hyperliquid_database_service.dart';
+import 'package:bybit_scalping_bot/services/hyperliquid/position_change_detector.dart';
+import 'package:bybit_scalping_bot/services/notification_service.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Hyperliquid 트레이더 추적 Provider
@@ -12,6 +15,9 @@ import 'package:bybit_scalping_bot/utils/logger.dart';
 class HyperliquidProvider extends ChangeNotifier {
   final HyperliquidTraderRepository _repository;
   final HyperliquidApiClient _apiClient;
+  final HyperliquidDatabaseService _dbService = HyperliquidDatabaseService();
+  final PositionChangeDetector _changeDetector = PositionChangeDetector();
+  final NotificationService _notificationService = NotificationService();
 
   // 트레이더 목록
   List<HyperliquidTrader> _traders = [];
@@ -164,16 +170,87 @@ class HyperliquidProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 1. 이전 스냅샷 조회 (DB에서)
+      final oldSnapshots = await _dbService.getAllLatestSnapshots(
+        _traders.map((t) => t.address).toList(),
+      );
+
+      // 2. 새로운 상태 조회 (API에서)
       final addresses = _traders.map((t) => t.address).toList();
       _accountStates = await _apiClient.getMultipleAccountStates(addresses);
 
       Logger.success('${_accountStates.length}명의 트레이더 상태 업데이트 완료');
+
+      // 3. 각 트레이더별 변화 감지 및 처리
+      for (final trader in _traders) {
+        final newState = _accountStates[trader.address];
+        if (newState == null) continue;
+
+        final oldSnapshot = oldSnapshots[trader.address] ?? [];
+
+        // 변화 감지
+        final changes = _changeDetector.detectChanges(
+          trader: trader,
+          oldSnapshots: oldSnapshot,
+          newState: newState,
+        );
+
+        // 변화가 있으면 처리
+        for (final change in changes) {
+          // 알림 발송
+          await _notificationService.showTradeNotification(
+            title: '🐋 고래 알림: ${trader.displayName}',
+            body: change.notificationMessage,
+            payload: 'whale_${trader.address}_${change.coin}',
+          );
+
+          // 변화 로그 저장
+          await _dbService.insertPositionChangeLog(
+            traderAddress: trader.address,
+            changeType: change.type.name,
+            coin: change.coin,
+            details: change.logMessage,
+          );
+
+          Logger.warning(change.logMessage);
+        }
+
+        // 4. 새 포지션 스냅샷 저장
+        await _savePositionSnapshots(trader.address, newState);
+
+        // 5. 오래된 스냅샷 정리
+        await _dbService.cleanupOldSnapshots(trader.address, keepCount: 3);
+      }
+
+      // 오래된 변화 로그 정리 (1000개 유지)
+      await _dbService.cleanupOldChangeLogs(keep: 1000);
     } catch (e) {
       Logger.error('트레이더 상태 갱신 실패: $e');
       _error = '데이터를 불러올 수 없습니다';
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// 포지션 스냅샷 저장
+  Future<void> _savePositionSnapshots(
+    String traderAddress,
+    HyperliquidAccountState state,
+  ) async {
+    for (final assetPos in state.assetPositions) {
+      final pos = assetPos.position;
+      await _dbService.insertPositionSnapshot(
+        traderAddress: traderAddress,
+        coin: pos.coin,
+        side: pos.sideText,
+        size: pos.sizeAbs,
+        entryPrice: pos.entryPxAsDouble,
+        positionValue: pos.positionValueAsDouble,
+        unrealizedPnl: pos.unrealizedPnlAsDouble,
+        leverageValue: pos.leverage.value,
+        leverageType: pos.leverage.type,
+      );
     }
   }
 
