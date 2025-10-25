@@ -29,6 +29,9 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
   // 정렬 옵션
   String _sortBy = 'rank'; // rank, account_value, week_pnl, month_pnl, alltime_pnl
 
+  // 필터 옵션
+  Set<String> _selectedCoinsFilter = {}; // 선택된 코인 필터 (empty = 전체)
+
   @override
   void initState() {
     super.initState();
@@ -95,6 +98,35 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
       _sortBy = newSortBy;
       _sortTraders();
     });
+  }
+
+  /// 필터링된 트레이더 목록 가져오기
+  List<HyperdashTrader> get _filteredTraders {
+    if (_selectedCoinsFilter.isEmpty) {
+      return _topTraders;
+    }
+    return _topTraders.where((trader) {
+      return trader.mainPosition != null &&
+             _selectedCoinsFilter.contains(trader.mainPosition!.coin);
+    }).toList();
+  }
+
+  /// 모든 코인 목록 추출
+  Set<String> get _allCoins {
+    final coins = <String>{};
+    for (final trader in _topTraders) {
+      if (trader.mainPosition != null && trader.mainPosition!.coin.isNotEmpty) {
+        coins.add(trader.mainPosition!.coin);
+      }
+    }
+    final sortedCoins = coins.toList()..sort();
+    return sortedCoins.toSet();
+  }
+
+  /// 이미 등록된 트레이더인지 확인
+  bool _isTraderRegistered(String address) {
+    final provider = context.read<HyperliquidProvider>();
+    return provider.traders.any((t) => t.address.toLowerCase() == address.toLowerCase());
   }
 
   @override
@@ -407,6 +439,11 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
 
             const SizedBox(height: 12),
 
+            // 코인 필터
+            if (_allCoins.isNotEmpty) _buildCoinFilter(),
+
+            if (_allCoins.isNotEmpty) const SizedBox(height: 12),
+
             // Top Traders 리스트
             _buildTopTradersList(),
           ],
@@ -420,6 +457,149 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
     if (data != null && data.text != null) {
       _addressController.text = data.text!.trim();
     }
+  }
+
+  /// 코인 필터 위젯 (멀티 셀렉트 콤보박스)
+  Widget _buildCoinFilter() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D2D2D),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[700]!),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.filter_list, color: Colors.grey[400], size: 20),
+          const SizedBox(width: 8),
+          Text(
+            '주요 포지션 필터:',
+            style: TextStyle(color: Colors.grey[400], fontSize: 14),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: InkWell(
+              onTap: _showCoinFilterDialog,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.grey[700]!),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _selectedCoinsFilter.isEmpty
+                            ? '전체'
+                            : '${_selectedCoinsFilter.length}개 선택 (${_selectedCoinsFilter.join(', ')})',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Icon(Icons.arrow_drop_down, color: Colors.grey[400]),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 코인 필터 선택 다이얼로그
+  void _showCoinFilterDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        // 다이얼로그 내부 임시 선택 상태
+        Set<String> tempSelection = Set.from(_selectedCoinsFilter);
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF2D2D2D),
+              title: const Text(
+                '주요 포지션 필터',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    // "전체" 옵션
+                    CheckboxListTile(
+                      title: const Text(
+                        '전체',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      value: tempSelection.isEmpty,
+                      activeColor: Colors.blue,
+                      onChanged: (checked) {
+                        setDialogState(() {
+                          if (checked == true) {
+                            tempSelection.clear();
+                          }
+                        });
+                      },
+                      controlAffinity: ListTileControlAffinity.leading,
+                    ),
+                    Divider(color: Colors.grey[700]),
+                    // 각 코인별 체크박스
+                    ..._allCoins.map((coin) {
+                      return CheckboxListTile(
+                        title: Text(
+                          coin,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                        value: tempSelection.contains(coin),
+                        activeColor: Colors.blue,
+                        onChanged: (checked) {
+                          setDialogState(() {
+                            if (checked == true) {
+                              tempSelection.add(coin);
+                            } else {
+                              tempSelection.remove(coin);
+                            }
+                          });
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                      );
+                    }),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('취소'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _selectedCoinsFilter = tempSelection;
+                    });
+                    Navigator.pop(context);
+                  },
+                  style: TextButton.styleFrom(foregroundColor: Colors.blue),
+                  child: const Text('적용'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   /// Top Traders 리스트 위젯
@@ -458,6 +638,28 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
       );
     }
 
+    final filteredList = _filteredTraders;
+
+    if (filteredList.isEmpty) {
+      return Card(
+        color: const Color(0xFF2D2D2D),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            children: [
+              Icon(Icons.search_off, color: Colors.grey[400], size: 48),
+              const SizedBox(height: 12),
+              Text(
+                '필터 조건에 맞는 트레이더가 없습니다',
+                style: TextStyle(color: Colors.grey[400], fontSize: 14),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       height: 400,
       decoration: BoxDecoration(
@@ -467,14 +669,15 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
       ),
       child: ListView.separated(
         padding: const EdgeInsets.all(8),
-        itemCount: _topTraders.length,
+        itemCount: filteredList.length,
         separatorBuilder: (context, index) => Divider(
           color: Colors.grey[800],
           height: 1,
         ),
         itemBuilder: (context, index) {
-          final trader = _topTraders[index];
-          return _buildTraderTile(trader, index + 1);
+          final trader = filteredList[index];
+          final originalIndex = _topTraders.indexOf(trader) + 1;
+          return _buildTraderTile(trader, originalIndex);
         },
       ),
     );
@@ -483,11 +686,18 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
   /// 트레이더 타일 위젯
   Widget _buildTraderTile(HyperdashTrader trader, int rank) {
     final isProfitable = trader.isMonthPnlPositive;
+    final isRegistered = _isTraderRegistered(trader.address);
 
     return InkWell(
       onTap: () => _selectTrader(trader),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          border: isRegistered
+              ? Border.all(color: Colors.green.withValues(alpha: 0.5), width: 2)
+              : null,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Row(
           children: [
             // 순위
@@ -522,14 +732,44 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 주소
-                  Text(
-                    trader.shortAddress,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  // 주소 + 등록 여부 배지
+                  Row(
+                    children: [
+                      Text(
+                        trader.shortAddress,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (isRegistered) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.green, width: 1),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green, size: 12),
+                              SizedBox(width: 4),
+                              Text(
+                                '등록됨',
+                                style: TextStyle(
+                                  color: Colors.green,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 4),
 

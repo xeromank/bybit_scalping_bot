@@ -90,6 +90,7 @@ class HyperliquidDatabaseService {
     required double unrealizedPnl,
     required int leverageValue,
     required String leverageType,
+    required int timestamp,
   }) async {
     final db = await database;
     return await db.insert('position_snapshots', {
@@ -102,7 +103,7 @@ class HyperliquidDatabaseService {
       'unrealized_pnl': unrealizedPnl,
       'leverage_value': leverageValue,
       'leverage_type': leverageType,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'timestamp': timestamp,
     });
   }
 

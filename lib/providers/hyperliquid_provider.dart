@@ -7,6 +7,7 @@ import 'package:bybit_scalping_bot/services/hyperliquid/hyperliquid_api_client.d
 import 'package:bybit_scalping_bot/services/hyperliquid/hyperliquid_database_service.dart';
 import 'package:bybit_scalping_bot/services/hyperliquid/position_change_detector.dart';
 import 'package:bybit_scalping_bot/services/notification_service.dart';
+import 'package:bybit_scalping_bot/widgets/hyperliquid/whale_alert_overlay.dart';
 import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// Hyperliquid 트레이더 추적 Provider
@@ -18,6 +19,7 @@ class HyperliquidProvider extends ChangeNotifier {
   final HyperliquidDatabaseService _dbService = HyperliquidDatabaseService();
   final PositionChangeDetector _changeDetector = PositionChangeDetector();
   final NotificationService _notificationService = NotificationService();
+  final WhaleAlertOverlayManager _overlayManager = WhaleAlertOverlayManager();
 
   // 트레이더 목록
   List<HyperliquidTrader> _traders = [];
@@ -47,6 +49,7 @@ class HyperliquidProvider extends ChangeNotifier {
   /// 초기화
   Future<void> initialize() async {
     await loadTraders();
+    // 초기화 시에도 변화 감지 로직 사용 (이전 데이터와 비교)
     await refreshAllStates();
     _startAutoUpdate();
   }
@@ -91,15 +94,12 @@ class HyperliquidProvider extends ChangeNotifier {
         return false;
       }
 
-      // 계정 상태 조회 (백그라운드에서 비동기로 실행)
-      // 즉시 추가하고, 상태는 나중에 로드
-      // await refreshTraderState(trader.address);
-      refreshTraderState(trader.address).catchError((e) {
-        Logger.warning('트레이더 상태 조회 실패 (백그라운드): $e');
-      });
-
       // 목록 재로드
       await loadTraders();
+
+      // 즉시 상태 갱신 (변화 감지 로직 사용)
+      // 다음 자동 업데이트(10초)를 기다리지 않고 즉시 데이터 조회
+      await refreshAllStates();
 
       Logger.success('트레이더 추가 완료: ${trader.displayName}');
       return true;
@@ -187,6 +187,7 @@ class HyperliquidProvider extends ChangeNotifier {
         if (newState == null) continue;
 
         final oldSnapshot = oldSnapshots[trader.address] ?? [];
+        final isFirstLoad = oldSnapshot.isEmpty; // 처음 로드인지 확인
 
         // 변화 감지
         final changes = _changeDetector.detectChanges(
@@ -195,31 +196,43 @@ class HyperliquidProvider extends ChangeNotifier {
           newState: newState,
         );
 
-        // 변화가 있으면 처리
-        for (final change in changes) {
-          // 알림 발송
-          await _notificationService.showTradeNotification(
-            title: '🐋 고래 알림: ${trader.displayName}',
-            body: change.notificationMessage,
-            payload: 'whale_${trader.address}_${change.coin}',
-          );
+        // 처음 로드가 아니고, 변화가 있을 때만 알림
+        if (!isFirstLoad && changes.isNotEmpty) {
+          // 알림 발송 및 로그 저장
+          for (final change in changes) {
+            // 푸시 알림 발송
+            await _notificationService.showTradeNotification(
+              title: '🐋 고래 알림: ${trader.displayName}',
+              body: change.notificationMessage,
+              payload: 'whale_${trader.address}_${change.coin}',
+            );
 
-          // 변화 로그 저장
-          await _dbService.insertPositionChangeLog(
-            traderAddress: trader.address,
-            changeType: change.type.name,
-            coin: change.coin,
-            details: change.logMessage,
-          );
+            // 팝업 오버레이 표시
+            _overlayManager.showAlert(change);
 
-          Logger.warning(change.logMessage);
+            // 변화 로그 저장
+            await _dbService.insertPositionChangeLog(
+              traderAddress: trader.address,
+              changeType: change.type.name,
+              coin: change.coin,
+              details: change.logMessage,
+            );
+
+            Logger.warning(change.logMessage);
+          }
         }
 
-        // 4. 새 포지션 스냅샷 저장
-        await _savePositionSnapshots(trader.address, newState);
+        // 변화가 있거나 처음 로드인 경우 스냅샷 저장
+        if (changes.isNotEmpty || isFirstLoad) {
+          await _savePositionSnapshots(trader.address, newState);
+          await _dbService.cleanupOldSnapshots(trader.address, keepCount: 3);
 
-        // 5. 오래된 스냅샷 정리
-        await _dbService.cleanupOldSnapshots(trader.address, keepCount: 3);
+          if (isFirstLoad) {
+            Logger.debug('${trader.displayName}: 초기 스냅샷 저장 (알림 없음)');
+          }
+        } else {
+          Logger.debug('${trader.displayName}: 포지션 변화 없음');
+        }
       }
 
       // 오래된 변화 로그 정리 (1000개 유지)
@@ -238,6 +251,9 @@ class HyperliquidProvider extends ChangeNotifier {
     String traderAddress,
     HyperliquidAccountState state,
   ) async {
+    // 모든 포지션에 동일한 타임스탬프 사용 (중요!)
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
     for (final assetPos in state.assetPositions) {
       final pos = assetPos.position;
       await _dbService.insertPositionSnapshot(
@@ -250,6 +266,7 @@ class HyperliquidProvider extends ChangeNotifier {
         unrealizedPnl: pos.unrealizedPnlAsDouble,
         leverageValue: pos.leverage.value,
         leverageType: pos.leverage.type,
+        timestamp: timestamp,
       );
     }
   }

@@ -1,5 +1,6 @@
 import 'package:bybit_scalping_bot/models/hyperliquid/hyperliquid_account_state.dart';
 import 'package:bybit_scalping_bot/models/hyperliquid/hyperliquid_trader.dart';
+import 'package:bybit_scalping_bot/utils/logger.dart';
 
 /// 포지션 변화 타입
 enum PositionChangeType {
@@ -134,16 +135,25 @@ class PositionChangeDetector {
   }) {
     final changes = <PositionChange>[];
 
+    Logger.warning('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.warning('🔍 변화 감지 시작: ${trader.displayName}');
+    Logger.warning('📦 이전 스냅샷 개수: ${oldSnapshots.length}개');
+    Logger.warning('📊 새 포지션 개수: ${newState.assetPositions.length}개');
+
     // 이전 포지션을 Map으로 변환 (coin → data)
     final oldPositionsMap = <String, Map<String, dynamic>>{};
     for (final snapshot in oldSnapshots) {
-      oldPositionsMap[snapshot['coin'] as String] = snapshot;
+      final coin = snapshot['coin'] as String;
+      oldPositionsMap[coin] = snapshot;
+      Logger.debug('  📍 OLD: $coin = ${snapshot['size']} ${snapshot['side']}');
     }
 
     // 새로운 포지션을 Map으로 변환 (coin → Position)
     final newPositionsMap = <String, Position>{};
     for (final assetPos in newState.assetPositions) {
-      newPositionsMap[assetPos.position.coin] = assetPos.position;
+      final coin = assetPos.position.coin;
+      newPositionsMap[coin] = assetPos.position;
+      Logger.debug('  📍 NEW: $coin = ${assetPos.position.sizeAbs} ${assetPos.position.sideText}');
     }
 
     // 1. 새 포지션 진입 & 사이즈 변화 & 방향 전환 감지
@@ -153,6 +163,9 @@ class PositionChangeDetector {
 
       if (!oldPositionsMap.containsKey(coin)) {
         // 새 포지션 진입
+        Logger.error('🚨 새 포지션 진입 감지: $coin');
+        Logger.error('   → 이유: oldPositionsMap에 $coin이 없음');
+        Logger.error('   → oldPositionsMap keys: ${oldPositionsMap.keys.toList()}');
         changes.add(PositionChange(
           type: PositionChangeType.newPosition,
           trader: trader,
@@ -167,6 +180,7 @@ class PositionChangeDetector {
 
         // 방향 전환 체크
         if (oldPos['side'] != newPosMap['side']) {
+          Logger.error('🔄 방향 전환 감지: $coin ${oldPos['side']} → ${newPosMap['side']}');
           changes.add(PositionChange(
             type: PositionChangeType.sideFlipped,
             trader: trader,
@@ -181,9 +195,12 @@ class PositionChangeDetector {
           final sizeDiff = (newSize - oldSize).abs();
           final changePercent = sizeDiff / oldSize;
 
+          Logger.debug('  ↔️  $coin 사이즈 비교: $oldSize → $newSize (${(changePercent * 100).toStringAsFixed(2)}%)');
+
           if (changePercent >= sizeChangeThreshold) {
             if (newSize > oldSize) {
               // 사이즈 증가
+              Logger.error('📈 사이즈 증가 감지: $coin ${(changePercent * 100).toStringAsFixed(1)}% 증가');
               changes.add(PositionChange(
                 type: PositionChangeType.sizeIncreased,
                 trader: trader,
@@ -193,6 +210,7 @@ class PositionChangeDetector {
               ));
             } else {
               // 사이즈 감소
+              Logger.error('📉 사이즈 감소 감지: $coin ${(changePercent * 100).toStringAsFixed(1)}% 감소');
               changes.add(PositionChange(
                 type: PositionChangeType.sizeDecreased,
                 trader: trader,
@@ -210,6 +228,7 @@ class PositionChangeDetector {
     for (final coin in oldPositionsMap.keys) {
       if (!newPositionsMap.containsKey(coin)) {
         // 포지션이 사라짐 = 청산
+        Logger.error('🔴 포지션 청산 감지: $coin');
         changes.add(PositionChange(
           type: PositionChangeType.closedPosition,
           trader: trader,
@@ -219,6 +238,9 @@ class PositionChangeDetector {
         ));
       }
     }
+
+    Logger.warning('✅ 변화 감지 완료: ${changes.length}개의 변화 발견');
+    Logger.warning('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     return changes;
   }

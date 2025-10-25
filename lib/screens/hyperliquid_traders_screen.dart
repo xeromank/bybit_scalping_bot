@@ -5,6 +5,7 @@ import 'package:bybit_scalping_bot/screens/hyperliquid_trader_add_screen.dart';
 import 'package:bybit_scalping_bot/screens/hyperliquid_trader_detail_screen.dart';
 import 'package:bybit_scalping_bot/models/hyperliquid/hyperliquid_trader.dart';
 import 'package:bybit_scalping_bot/models/hyperliquid/hyperliquid_account_state.dart';
+import 'package:bybit_scalping_bot/widgets/hyperliquid/whale_alert_overlay.dart';
 
 /// Hyperliquid 트레이더 목록 화면
 class HyperliquidTradersScreen extends StatefulWidget {
@@ -15,11 +16,16 @@ class HyperliquidTradersScreen extends StatefulWidget {
 }
 
 class _HyperliquidTradersScreenState extends State<HyperliquidTradersScreen> {
+  String? _selectedCoin; // 선택된 코인 필터
+
   @override
   void initState() {
     super.initState();
     // 초기화
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 오버레이 매니저 초기화
+      WhaleAlertOverlayManager().initialize(context);
+      // Provider 초기화
       context.read<HyperliquidProvider>().initialize();
     });
   }
@@ -114,34 +120,52 @@ class _HyperliquidTradersScreenState extends State<HyperliquidTradersScreen> {
             );
           }
 
+          // 모든 코인 목록 추출
+          final allCoins = _getAllCoins(provider);
+
+          // 필터링된 트레이더 목록
+          final filteredTraders = _getFilteredTraders(provider);
+
           // 트레이더 목록
-          return RefreshIndicator(
-            onRefresh: () => provider.refreshAllStates(),
-            backgroundColor: const Color(0xFF1E1E1E),
-            color: Colors.blue,
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: provider.traders.length,
-              itemBuilder: (context, index) {
-                final trader = provider.traders[index];
-                final state = provider.getAccountState(trader.address);
-                return _TraderCard(
-                  trader: trader,
-                  state: state,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => HyperliquidTraderDetailScreen(
-                          trader: trader,
+          return Column(
+            children: [
+              // 코인 필터 칩
+              if (allCoins.isNotEmpty) _buildCoinFilter(allCoins),
+
+              // 트레이더 리스트
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () => provider.refreshAllStates(),
+                  backgroundColor: const Color(0xFF1E1E1E),
+                  color: Colors.blue,
+                  child: filteredTraders.isEmpty
+                      ? _buildEmptyFilterResult()
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: filteredTraders.length,
+                          itemBuilder: (context, index) {
+                            final trader = filteredTraders[index];
+                            final state = provider.getAccountState(trader.address);
+                            return _TraderCard(
+                              trader: trader,
+                              state: state,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => HyperliquidTraderDetailScreen(
+                                      trader: trader,
+                                    ),
+                                  ),
+                                );
+                              },
+                              onDelete: () => _confirmDelete(context, trader),
+                            );
+                          },
                         ),
-                      ),
-                    );
-                  },
-                  onDelete: () => _confirmDelete(context, trader),
-                );
-              },
-            ),
+                ),
+              ),
+            ],
           );
         },
       ),
@@ -164,6 +188,143 @@ class _HyperliquidTradersScreenState extends State<HyperliquidTradersScreen> {
         backgroundColor: Colors.blue,
         icon: const Icon(Icons.add),
         label: const Text('트레이더 추가'),
+      ),
+    );
+  }
+
+  /// 모든 코인 목록 추출
+  Set<String> _getAllCoins(HyperliquidProvider provider) {
+    final coins = <String>{};
+    for (final trader in provider.traders) {
+      final state = provider.getAccountState(trader.address);
+      if (state != null) {
+        for (final assetPos in state.assetPositions) {
+          coins.add(assetPos.position.coin);
+        }
+      }
+    }
+    final sortedCoins = coins.toList()..sort();
+    return sortedCoins.toSet();
+  }
+
+  /// 필터링된 트레이더 목록
+  List<HyperliquidTrader> _getFilteredTraders(HyperliquidProvider provider) {
+    if (_selectedCoin == null) {
+      return provider.traders;
+    }
+
+    return provider.traders.where((trader) {
+      final state = provider.getAccountState(trader.address);
+      if (state == null) return false;
+
+      return state.assetPositions.any(
+        (assetPos) => assetPos.position.coin == _selectedCoin,
+      );
+    }).toList();
+  }
+
+  /// 코인 필터 칩 위젯
+  Widget _buildCoinFilter(Set<String> coins) {
+    return Container(
+      color: const Color(0xFF1A1A1A),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.filter_list, color: Colors.blue, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                '코인 필터',
+                style: TextStyle(
+                  color: Colors.grey[300],
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // "전체" 칩
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ChoiceChip(
+                    label: const Text('전체'),
+                    selected: _selectedCoin == null,
+                    onSelected: (selected) {
+                      setState(() {
+                        _selectedCoin = null;
+                      });
+                    },
+                    backgroundColor: const Color(0xFF2D2D2D),
+                    selectedColor: Colors.blue,
+                    labelStyle: TextStyle(
+                      color: _selectedCoin == null ? Colors.white : Colors.grey[400],
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                // 각 코인별 칩
+                ...coins.map((coin) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(coin),
+                      selected: _selectedCoin == coin,
+                      onSelected: (selected) {
+                        setState(() {
+                          _selectedCoin = selected ? coin : null;
+                        });
+                      },
+                      backgroundColor: const Color(0xFF2D2D2D),
+                      selectedColor: Colors.blue,
+                      labelStyle: TextStyle(
+                        color: _selectedCoin == coin ? Colors.white : Colors.grey[400],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 필터 결과 없을 때 위젯
+  Widget _buildEmptyFilterResult() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.search_off, color: Colors.grey, size: 60),
+          const SizedBox(height: 16),
+          Text(
+            _selectedCoin != null
+                ? '$_selectedCoin 포지션이 있는\n트레이더가 없습니다'
+                : '필터링 결과가 없습니다',
+            style: TextStyle(color: Colors.grey[400], fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+          TextButton.icon(
+            onPressed: () {
+              setState(() {
+                _selectedCoin = null;
+              });
+            },
+            icon: const Icon(Icons.clear),
+            label: const Text('필터 초기화'),
+            style: TextButton.styleFrom(foregroundColor: Colors.blue),
+          ),
+        ],
       ),
     );
   }
