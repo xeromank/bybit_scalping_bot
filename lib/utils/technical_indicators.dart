@@ -853,7 +853,7 @@ List<double> calculateEMASeries(List<double> prices, int period) {
 ///
 /// Returns BollingerBands object
 BollingerBands calculateBollingerBandsDefault(List<double> prices) {
-  return calculateBollingerBands(prices, 20, 2.0);
+  return calculateBollingerBands(prices, 20, 3.0);
 }
 
 // ============================================================================

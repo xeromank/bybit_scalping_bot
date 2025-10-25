@@ -293,6 +293,125 @@ class _HyperliquidTradersScreenState extends State<HyperliquidTradersScreen> {
               ],
             ),
           ),
+          // 롱/숏 비율 표시 (코인 선택 시에만)
+          if (_selectedCoin != null) _buildLongShortRatio(context.read<HyperliquidProvider>()),
+        ],
+      ),
+    );
+  }
+
+  /// 롱/숏 비율 위젯
+  Widget _buildLongShortRatio(HyperliquidProvider provider) {
+    if (_selectedCoin == null) return const SizedBox.shrink();
+
+    // 선택된 코인의 롱/숏 카운트 계산
+    int longCount = 0;
+    int shortCount = 0;
+
+    for (final trader in provider.traders) {
+      final state = provider.getAccountState(trader.address);
+      if (state == null) continue;
+
+      for (final assetPos in state.assetPositions) {
+        if (assetPos.position.coin == _selectedCoin) {
+          if (assetPos.position.isLong) {
+            longCount++;
+          } else if (assetPos.position.isShort) {
+            shortCount++;
+          }
+        }
+      }
+    }
+
+    final total = longCount + shortCount;
+    if (total == 0) return const SizedBox.shrink();
+
+    final longPercent = (longCount / total * 100).toStringAsFixed(1);
+    final shortPercent = (shortCount / total * 100).toStringAsFixed(1);
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D2D2D),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.pie_chart, color: Colors.amber, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                '$_selectedCoin 롱/숏 비율',
+                style: TextStyle(
+                  color: Colors.grey[300],
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // 롱/숏 바
+          Row(
+            children: [
+              Expanded(
+                flex: longCount,
+                child: Container(
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: const BorderRadius.horizontal(left: Radius.circular(4)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    longCount > 0 ? 'LONG $longPercent%' : '',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: shortCount,
+                child: Container(
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    shortCount > 0 ? 'SHORT $shortPercent%' : '',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // 숫자 표시
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '롱: $longCount명',
+                style: const TextStyle(color: Colors.green, fontSize: 12),
+              ),
+              Text(
+                '숏: $shortCount명',
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ],
+          ),
         ],
       ),
     );

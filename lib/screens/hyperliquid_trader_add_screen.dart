@@ -444,6 +444,11 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
 
             if (_allCoins.isNotEmpty) const SizedBox(height: 12),
 
+            // 롱/숏 비율 표시 (코인 필터 선택 시)
+            if (_selectedCoinsFilter.isNotEmpty) _buildLongShortRatio(),
+
+            if (_selectedCoinsFilter.isNotEmpty) const SizedBox(height: 12),
+
             // Top Traders 리스트
             _buildTopTradersList(),
           ],
@@ -508,6 +513,157 @@ class _HyperliquidTraderAddScreenState extends State<HyperliquidTraderAddScreen>
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// 롱/숏 비율 위젯
+  Widget _buildLongShortRatio() {
+    if (_selectedCoinsFilter.isEmpty) return const SizedBox.shrink();
+
+    // 선택된 코인별 롱/숏 카운트 계산
+    final Map<String, Map<String, int>> coinStats = {};
+
+    for (final coin in _selectedCoinsFilter) {
+      coinStats[coin] = {'long': 0, 'short': 0};
+    }
+
+    for (final trader in _topTraders) {
+      if (trader.mainPosition != null &&
+          _selectedCoinsFilter.contains(trader.mainPosition!.coin)) {
+        final coin = trader.mainPosition!.coin;
+        final side = trader.mainPosition!.side;
+
+        if (side == 'LONG') {
+          coinStats[coin]!['long'] = (coinStats[coin]!['long'] ?? 0) + 1;
+        } else if (side == 'SHORT') {
+          coinStats[coin]!['short'] = (coinStats[coin]!['short'] ?? 0) + 1;
+        }
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2D2D2D),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[700]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.pie_chart, color: Colors.amber, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                '롱/숏 비율 (Top 1000 기준)',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 각 코인별 비율 표시
+          ...coinStats.entries.map((entry) {
+            final coin = entry.key;
+            final long = entry.value['long'] ?? 0;
+            final short = entry.value['short'] ?? 0;
+            final total = long + short;
+
+            if (total == 0) return const SizedBox.shrink();
+
+            final longPercent = (long / total * 100).toStringAsFixed(1);
+            final shortPercent = (short / total * 100).toStringAsFixed(1);
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    coin,
+                    style: TextStyle(
+                      color: Colors.grey[300],
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // 롱/숏 바
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: long > 0 ? long : 1,
+                        child: Container(
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: long > 0 ? Colors.green : Colors.grey[800],
+                            borderRadius: const BorderRadius.horizontal(left: Radius.circular(4)),
+                          ),
+                          alignment: Alignment.center,
+                          child: long > 0
+                              ? Text(
+                                  'LONG $longPercent%',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                      Expanded(
+                        flex: short > 0 ? short : 1,
+                        child: Container(
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: short > 0 ? Colors.red : Colors.grey[800],
+                            borderRadius: const BorderRadius.horizontal(right: Radius.circular(4)),
+                          ),
+                          alignment: Alignment.center,
+                          child: short > 0
+                              ? Text(
+                                  'SHORT $shortPercent%',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  // 숫자 표시
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '롱: $long명',
+                        style: const TextStyle(color: Colors.green, fontSize: 12),
+                      ),
+                      Text(
+                        '총 $total명',
+                        style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                      ),
+                      Text(
+                        '숏: $short명',
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
       ),
     );
